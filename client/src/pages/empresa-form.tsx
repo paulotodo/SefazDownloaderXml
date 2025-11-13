@@ -26,6 +26,7 @@ import { useLocation } from "wouter";
 import { Upload, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { UFS } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 
 const formSchema = z.object({
   cnpj: z.string().regex(/^\d{14}$/, "CNPJ deve conter 14 dígitos (somente números)"),
@@ -75,15 +76,10 @@ export default function EmpresaForm() {
       formData.append("certificadoSenha", data.certificadoSenha);
       formData.append("certificado", certificadoFile);
 
-      const response = await fetch("/api/empresas", {
+      await apiRequest("/api/empresas", {
         method: "POST",
         body: formData,
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Erro ao cadastrar empresa");
-      }
 
       toast({
         title: "Empresa cadastrada!",
@@ -96,7 +92,7 @@ export default function EmpresaForm() {
     } catch (error) {
       toast({
         title: "Erro ao cadastrar",
-        description: String(error),
+        description: error instanceof Error ? error.message : "Erro ao cadastrar empresa",
         variant: "destructive",
       });
     }
