@@ -6,6 +6,31 @@ import { z } from "zod";
 
 const router = Router();
 
+// Endpoint de teste para verificar conexão Supabase
+router.get("/test-connection", async (req: Request, res: Response) => {
+  try {
+    // Testa com anon key
+    const { data: anonData, error: anonError } = await supabaseAnon.auth.getSession();
+    
+    // Testa com admin key
+    const { data: adminData, error: adminError } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 });
+    
+    res.json({
+      anonKey: {
+        works: !anonError,
+        error: anonError?.message
+      },
+      adminKey: {
+        works: !adminError,
+        error: adminError?.message,
+        userCount: adminData?.users?.length || 0
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 // POST /api/auth/register - Registrar novo usuário
 router.post("/register", async (req: Request, res: Response) => {
   try {
@@ -39,20 +64,23 @@ router.post("/register", async (req: Request, res: Response) => {
     }
 
     // Debug: log completo da resposta do Supabase
-    console.log("Resposta do Supabase signUp:", {
-      hasUser: !!data.user,
-      hasSession: !!data.session,
-      userId: data.user?.id,
-      email: data.user?.email,
-    });
+    console.log("=== REGISTRO SUPABASE DEBUG ===");
+    console.log("Email tentado:", email);
+    console.log("Tem user?", !!data.user);
+    console.log("Tem session?", !!data.session);
+    console.log("User ID:", data.user?.id);
+    console.log("User email:", data.user?.email);
+    console.log("User confirmado?", data.user?.email_confirmed_at);
+    console.log("===============================");
 
     if (!data.user) {
-      console.error("Supabase não retornou user após signUp");
-      return res.status(400).json({ error: "Erro ao criar usuário" });
+      console.error("❌ ERRO: Supabase não retornou user após signUp");
+      return res.status(400).json({ error: "Erro ao criar usuário no Supabase. Verifique as configurações de autenticação." });
     }
 
     if (!data.session) {
-      console.warn("⚠️ Supabase exige confirmação de email - usuário criado mas sem sessão ativa");
+      console.warn("⚠️ AVISO: Usuário criado mas sem sessão ativa");
+      console.warn("Isso indica que confirmação de email está habilitada no Supabase");
       return res.status(400).json({ 
         error: "Conta criada! Por favor, verifique seu email para confirmar o cadastro antes de fazer login.",
         requiresEmailConfirmation: true 
