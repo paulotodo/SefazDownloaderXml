@@ -127,9 +127,15 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
 - ✅ `deploy-scripts/deploy.sh`: Scripts de gerenciamento rápido
 - ✅ `DEPLOYMENT.md`: **Guia completo passo a passo** 📘
 
-### Deploy em VPS Hetzner (Docker Standalone)
+### Deploy em VPS Hetzner
 
-**Leia o guia completo:** `DEPLOYMENT.md`
+**Opção 1: Docker Standalone com Nginx + Certbot**
+- **Guia completo:** `DEPLOYMENT.md`
+
+**Opção 2: Portainer + Traefik (Recomendado se já instalados)**
+- **Guia completo:** `DEPLOYMENT-PORTAINER.md`
+- **Docker Compose:** `docker-compose.portainer.yml`
+- **Env template:** `.env.portainer`
 
 **Quick Start:**
 ```bash
