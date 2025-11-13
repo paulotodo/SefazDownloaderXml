@@ -147,8 +147,8 @@ export class SefazService {
       body?.["nfe:retDistDFeInt"] ||
       parsed["retDistDFeInt"];
 
-    const cStat = retDistDFeInt?.cStat || "";
-    const xMotivo = retDistDFeInt?.xMotivo || "";
+    const cStat = String(retDistDFeInt?.cStat || "");
+    const xMotivo = String(retDistDFeInt?.xMotivo || "");
     const ultNSU = retDistDFeInt?.ultNSU;
     const maxNSU = retDistDFeInt?.maxNSU;
 
