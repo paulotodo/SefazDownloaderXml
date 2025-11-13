@@ -4,6 +4,12 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
+// Configuração: Permitir simulação SEFAZ em desenvolvimento
+if (process.env.NODE_ENV === "development" && !process.env.ALLOW_SEFAZ_SIMULATION) {
+  process.env.ALLOW_SEFAZ_SIMULATION = "true";
+  console.log("⚠️  ALLOW_SEFAZ_SIMULATION ativado para desenvolvimento");
+}
+
 declare module 'http' {
   interface IncomingMessage {
     rawBody: unknown

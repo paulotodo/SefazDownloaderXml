@@ -369,10 +369,18 @@ export class SefazService {
         sincronizacaoId: sincronizacao.id,
         nivel: "error",
         mensagem: `Erro na sincronização: ${String(error)}`,
-        detalhes: JSON.stringify({ error: String(error) }),
+        detalhes: JSON.stringify({ 
+          error: String(error),
+          stack: (error as Error).stack,
+          nsuInicial: empresa.ultimoNSU,
+          nsuAtual,
+          xmlsBaixados
+        }),
       });
 
-      throw error;
+      console.error(`Erro crítico ao sincronizar ${empresa.razaoSocial}:`, error);
+      // Não propaga - erro já registrado, permite continuar outras empresas
+      return 0;
     }
   }
 
