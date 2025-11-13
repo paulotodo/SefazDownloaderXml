@@ -36,6 +36,11 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // ========== HEALTH CHECK ========== (público)
+  app.get("/api/health", (req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // ========== AUTENTICAÇÃO ==========
   app.use("/api/auth", authRoutes);
 

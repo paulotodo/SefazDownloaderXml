@@ -115,17 +115,85 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
 - **Nota**: Supabase pode bloquear emails de domínios de teste (example.com) - use domínios reais para testes
 
 ## Deploy
-- Configurar variáveis de ambiente: 
-  - `SUPABASE_URL`: URL do projeto Supabase
-  - `SUPABASE_ANON_KEY`: Anon key para operações do usuário
-  - `SUPABASE_SERVICE_ROLE_KEY`: Service role key para server-side e cron
-  - `SESSION_SECRET`: Secret para sessões Express
-  - `XML_DEST_PATH`: Caminho para salvar XMLs
-- Upload inicial de certificados válidos
-- Garantir diretórios `./certificados` e `./xmls` com permissões adequadas
-- Executar schema SQL no Supabase (`supabase-schema.sql`)
-- Configurar RLS policies no Supabase
-- Em produção: migrar certificados para Supabase Storage
+
+### Arquivos de Deploy Criados
+- ✅ `Dockerfile`: Build otimizado multi-stage (80% menor)
+- ✅ `docker-compose.yml`: Orquestração completa (app + nginx + certbot)
+- ✅ `nginx/nginx.conf`: Configuração Nginx com SSL/HTTPS
+- ✅ `nginx/conf.d/default.conf`: Virtual host com Let's Encrypt
+- ✅ `.dockerignore`: Otimização de build
+- ✅ `.env.example`: Template de variáveis de ambiente
+- ✅ `deploy-scripts/init-letsencrypt.sh`: Configuração automática SSL
+- ✅ `deploy-scripts/deploy.sh`: Scripts de gerenciamento rápido
+- ✅ `DEPLOYMENT.md`: **Guia completo passo a passo** 📘
+
+### Deploy em VPS Hetzner (Docker Standalone)
+
+**Leia o guia completo:** `DEPLOYMENT.md`
+
+**Quick Start:**
+```bash
+# 1. No servidor VPS (Ubuntu 22.04/24.04)
+apt update && apt upgrade -y
+apt install -y docker.io docker-compose git
+
+# 2. Clonar projeto
+git clone https://github.com/SEU_USUARIO/sefaz-xml-sync.git
+cd sefaz-xml-sync
+
+# 3. Configurar ambiente
+cp .env.example .env
+nano .env  # Preencher com credenciais Supabase
+
+# 4. Configurar SSL (editar domínio)
+nano nginx/conf.d/default.conf
+nano deploy-scripts/init-letsencrypt.sh
+chmod +x deploy-scripts/*.sh
+./deploy-scripts/init-letsencrypt.sh
+
+# 5. Deploy
+docker compose build
+docker compose up -d
+
+# 6. Verificar
+docker compose ps
+docker compose logs -f app
+```
+
+**Gerenciamento:**
+```bash
+./deploy-scripts/deploy.sh restart   # Reiniciar
+./deploy-scripts/deploy.sh logs      # Ver logs
+./deploy-scripts/deploy.sh update    # Atualizar código
+./deploy-scripts/deploy.sh backup    # Backup
+./deploy-scripts/deploy.sh status    # Status
+```
+
+### Variáveis de Ambiente (Produção)
+- `SUPABASE_URL`: URL do projeto Supabase
+- `SUPABASE_ANON_KEY`: Anon key para operações do usuário
+- `SUPABASE_SERVICE_ROLE_KEY`: Service role key para server-side e cron
+- `SESSION_SECRET`: Secret gerado com `openssl rand -base64 32`
+- `NODE_ENV=production`
+- `PORT=5000`
+- `XML_DEST_PATH=/app/xmls`
+- `ALLOW_SEFAZ_SIMULATION=false` (desabilitar em produção)
+
+### Pré-requisitos
+- ✅ VPS Hetzner (Ubuntu 22.04/24.04, mín 2GB RAM)
+- ✅ Domínio apontando para IP do servidor
+- ✅ Projeto Supabase configurado com RLS
+- ✅ Schema SQL executado (`supabase-schema.sql`)
+- ✅ Certificados digitais .pfx das empresas
+
+### Segurança em Produção
+- ✅ HTTPS automático com Let's Encrypt
+- ✅ Firewall UFW (portas 22, 80, 443)
+- ✅ Row-Level Security (RLS) no Supabase
+- ✅ Certificados .pfx com permissões 600
+- ✅ Backup automático (cron diário)
+- ✅ Health checks configurados
+- ✅ Auto-restart em falhas
 
 ## Melhorias Futuras
 - Notificações por email quando novos XMLs forem baixados
