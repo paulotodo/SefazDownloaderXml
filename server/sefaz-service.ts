@@ -131,12 +131,21 @@ export class SefazService {
 
     // Navega pela estrutura SOAP
     const envelope = parsed["soap12:Envelope"] || parsed["Envelope"];
-    const body = envelope["soap12:Body"] || envelope["Body"];
+    const body = envelope?.["soap12:Body"] || envelope?.["Body"];
     const response =
-      body["nfeDistDFeInteresseResponse"] ||
-      body["nfe:nfeDistDFeInteresseResponse"];
+      body?.["nfeDistDFeInteresseResponse"] ||
+      body?.["nfe:nfeDistDFeInteresseResponse"];
     const result = response?.["nfeDistDFeInteresseResult"] || response?.["nfe:nfeDistDFeInteresseResult"];
-    const retDistDFeInt = result?.["retDistDFeInt"] || parsed["retDistDFeInt"];
+    
+    // Tenta encontrar retDistDFeInt em várias estruturas possíveis:
+    // 1. Resposta completa (produção): result.retDistDFeInt
+    // 2. Diretamente no body (simulação): body.retDistDFeInt
+    // 3. No root do parsed
+    const retDistDFeInt = 
+      result?.["retDistDFeInt"] || 
+      body?.["retDistDFeInt"] ||
+      body?.["nfe:retDistDFeInt"] ||
+      parsed["retDistDFeInt"];
 
     const cStat = retDistDFeInt?.cStat || "";
     const xMotivo = retDistDFeInt?.xMotivo || "";
