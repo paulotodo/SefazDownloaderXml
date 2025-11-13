@@ -49,7 +49,7 @@ export default function Empresas() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/empresas/${id}`),
+    mutationFn: (id: string) => apiRequest(`/api/empresas/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/empresas"] });
       toast({
@@ -67,7 +67,7 @@ export default function Empresas() {
   });
 
   const sincronizarMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/empresas/${id}/sincronizar`),
+    mutationFn: (id: string) => apiRequest(`/api/empresas/${id}/sincronizar`, { method: "POST" }),
     onSuccess: () => {
       toast({
         title: "Sincronização iniciada",
