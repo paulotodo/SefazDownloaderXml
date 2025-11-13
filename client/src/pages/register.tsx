@@ -53,12 +53,17 @@ export default function Register() {
       const errorMessage = error.message || "Ocorreu um erro ao criar sua conta";
       const isEmailConfirmation = errorMessage.includes("confirmar o cadastro") || 
                                    errorMessage.includes("verifique seu email");
+      const isRateLimit = errorMessage.includes("Muitas tentativas") || 
+                          errorMessage.includes("rate limit") ||
+                          errorMessage.includes("aguarde");
       
       toast({
-        title: isEmailConfirmation ? "⚠️ Confirmação de Email Necessária" : "Erro ao criar conta",
+        title: isRateLimit ? "⏱️ Aguarde um Momento" : 
+               isEmailConfirmation ? "⚠️ Confirmação de Email Necessária" : 
+               "Erro ao criar conta",
         description: errorMessage,
-        variant: isEmailConfirmation ? "default" : "destructive",
-        duration: isEmailConfirmation ? 10000 : 5000,
+        variant: (isEmailConfirmation || isRateLimit) ? "default" : "destructive",
+        duration: (isEmailConfirmation || isRateLimit) ? 10000 : 5000,
       });
     } finally {
       setIsLoading(false);

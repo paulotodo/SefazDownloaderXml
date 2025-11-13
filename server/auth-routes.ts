@@ -24,6 +24,15 @@ router.post("/register", async (req: Request, res: Response) => {
 
     if (error) {
       console.error("Erro no registro - Supabase:", error);
+      
+      // Trata rate limiting de envio de emails
+      if (error.status === 429 || error.message.includes("rate limit")) {
+        return res.status(429).json({ 
+          error: "Muitas tentativas de registro. Por favor, aguarde alguns minutos antes de tentar novamente.",
+          retryAfter: 60 // sugestão de espera em segundos
+        });
+      }
+      
       // Supabase pode rejeitar emails de domínios de teste (example.com, etc)
       // ou exigir confirmação de email dependendo das configurações do projeto
       return res.status(400).json({ error: error.message });
