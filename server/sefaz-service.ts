@@ -1,4 +1,5 @@
 import https from "https";
+import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import { XMLParser } from "fast-xml-parser";
@@ -82,12 +83,39 @@ export class SefazService {
           throw new Error(`Erro ao ler certificado: ${error}`);
         }
 
+        // Validar tamanho mínimo do certificado
+        if (pfxBuffer.length < 100) {
+          throw new Error(`Certificado inválido ou corrompido (tamanho muito pequeno: ${pfxBuffer.length} bytes)`);
+        }
+
         // Cria agente HTTPS com certificado
-        const agent = new https.Agent({
-          pfx: pfxBuffer,
-          passphrase: empresa.certificadoSenha,
-          rejectUnauthorized: true, // Validar certificados SSL
-        });
+        // IMPORTANTE: Certificados A1 brasileiros usam algoritmos legados (DES, 3DES)
+        // que requerem configurações especiais no OpenSSL 3.x
+        let agent: https.Agent;
+        try {
+          agent = new https.Agent({
+            pfx: pfxBuffer,
+            passphrase: empresa.certificadoSenha,
+            rejectUnauthorized: true, // Validar certificados SSL
+            // Suporte para certificados legados (A1 brasileiros)
+            secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+            minVersion: 'TLSv1.2' as any, // Mínimo TLS 1.2
+            maxVersion: 'TLSv1.3' as any, // Máximo TLS 1.3
+          });
+        } catch (certError: any) {
+          // Erros comuns de certificado
+          if (certError.message?.includes('Unsupported') || certError.message?.includes('PKCS12')) {
+            throw new Error(
+              `Certificado PKCS12 inválido ou corrompido. ` +
+              `Verifique: (1) Arquivo .pfx não corrompido, (2) Senha correta, ` +
+              `(3) Certificado não expirado. Erro: ${certError.message}`
+            );
+          } else if (certError.message?.includes('MAC verify error')) {
+            throw new Error(`Senha do certificado incorreta. Verifique a senha do arquivo .pfx`);
+          } else {
+            throw new Error(`Erro ao carregar certificado: ${certError.message}`);
+          }
+        }
 
         const options: https.RequestOptions = {
           hostname: url.hostname,

@@ -213,6 +213,21 @@ docker compose logs -f app
 - Implementar 2FA (Two-Factor Authentication)
 - Logs de auditoria para ações críticas
 
+## Correções Recentes
+
+### Suporte a Certificados Digitais Legados (13/11/2025)
+- ✅ **Corrigido:** Erro "Unsupported PKCS12 PFX data"
+- ✅ Implementado suporte para algoritmos legados (DES, 3DES)
+- ✅ Adicionada validação automática de certificados
+- ✅ Mensagens de erro mais claras e acionáveis
+- ✅ Documentação completa: `TROUBLESHOOTING-CERTIFICADOS.md`
+
+**Detalhes técnicos:**
+- Habilitado `SSL_OP_LEGACY_SERVER_CONNECT` no HTTPS Agent
+- Validação de tamanho mínimo do arquivo .pfx
+- Tratamento específico de erros de senha e formato
+- TLS 1.2/1.3 configurado corretamente
+
 ## Status do Projeto
 ✅ **Sistema 100% funcional** com autenticação multi-usuário completa:
 - ✅ Registro e login via Supabase Auth (JWT)

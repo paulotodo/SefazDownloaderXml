@@ -82,6 +82,7 @@ cat QUICK-START-PORTAINER.md
 - ⚡ [`QUICK-START-PORTAINER.md`](QUICK-START-PORTAINER.md) - Referência rápida Portainer
 - 📦 [`GIT-SETUP.md`](GIT-SETUP.md) - Como subir código para GitHub
 - 🗄️ [`supabase-schema.sql`](supabase-schema.sql) - Schema do banco de dados
+- 🔧 [`TROUBLESHOOTING-CERTIFICADOS.md`](TROUBLESHOOTING-CERTIFICADOS.md) - Problemas com certificados digitais
 
 ## 🔐 Configuração Supabase
 
@@ -257,6 +258,29 @@ docker compose up -d
 tar -czf xmls-backup.tar.gz ./xmls
 tar -czf certificados-backup.tar.gz ./certificados
 ```
+
+## ⚠️ Problemas Comuns
+
+### Erro: "Unsupported PKCS12 PFX data"
+
+**Causa:** Certificados A1 brasileiros usam algoritmos legados não suportados por padrão no Node.js moderno.
+
+**✅ Solução:** Já implementada! O sistema detecta e trata automaticamente certificados legados.
+
+**Se persistir:**
+1. Verificar senha do certificado
+2. Baixar certificado novamente
+3. Consultar: [`TROUBLESHOOTING-CERTIFICADOS.md`](TROUBLESHOOTING-CERTIFICADOS.md)
+
+### Outros Problemas
+
+- **Senha incorreta:** "MAC verify error" → Verificar senha do .pfx
+- **Certificado expirado:** Renovar com Autoridade Certificadora
+- **Arquivo corrompido:** Fazer novo download
+
+**Documentação completa:** [`TROUBLESHOOTING-CERTIFICADOS.md`](TROUBLESHOOTING-CERTIFICADOS.md)
+
+---
 
 ## 📝 License
 

@@ -27,7 +27,14 @@ git add .
 git status
 
 # Criar commit inicial
-git commit -m "feat: sistema completo SEFAZ XML Sync"
+git commit -m "feat: sistema completo SEFAZ XML Sync com suporte a certificados legados
+
+- Autenticação multi-usuário via Supabase Auth
+- Sincronização automática de XMLs a cada 1 hora
+- Suporte para certificados digitais A1 legados (DES/3DES)
+- Deploy Docker (standalone + Portainer + Traefik)
+- Row-Level Security (RLS) para isolamento de dados
+- Documentação completa de deployment e troubleshooting"
 
 # Conectar ao GitHub (SUBSTITUA SEU_USUARIO!)
 git remote add origin https://github.com/SEU_USUARIO/sefaz-xml-sync.git
