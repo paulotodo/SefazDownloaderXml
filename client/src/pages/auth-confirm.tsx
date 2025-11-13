@@ -3,12 +3,17 @@ import { useLocation } from "wouter";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
+import { apiRequest } from "@/lib/queryClient";
+
+interface User {
+  id: string;
+  email: string;
+  nomeCompleto: string;
+}
 
 export default function AuthConfirm() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const { user } = useAuth();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [message, setMessage] = useState("Confirmando seu email...");
 
@@ -19,6 +24,7 @@ export default function AuthConfirm() {
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const accessToken = hashParams.get("access_token");
         const refreshToken = hashParams.get("refresh_token");
+        const expiresInStr = hashParams.get("expires_in");
         const type = hashParams.get("type");
 
         if (!accessToken || !refreshToken) {
@@ -28,29 +34,28 @@ export default function AuthConfirm() {
         }
 
         if (type === "signup") {
-          // Salva tokens no localStorage para auto-login
-          const expiresAt = Math.floor(Date.now() / 1000) + 3600; // 1 hora
+          // Usa o expires_in real do Supabase ou fallback para 3600 (1 hora)
+          const expiresInRaw = expiresInStr ? parseInt(expiresInStr) : 3600;
+          const expiresIn = isNaN(expiresInRaw) ? 3600 : expiresInRaw;
+          const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+          
           const session = {
             accessToken,
             refreshToken,
             expiresAt,
           };
 
+          // Salva sessão ANTES de fazer requisição para que apiRequest possa injetá-la
           localStorage.setItem("session", JSON.stringify(session));
 
-          // Busca dados do usuário
-          const response = await fetch("/api/auth/me", {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
+          // Busca dados do usuário usando apiRequest (que injeta o Bearer token automaticamente)
+          const userData = await apiRequest<{ user: User }>("/api/auth/me");
 
-          if (!response.ok) {
-            throw new Error("Erro ao buscar dados do usuário");
-          }
+          // Salva usuário no localStorage
+          localStorage.setItem("user", JSON.stringify(userData.user));
 
-          const userData = await response.json();
-          localStorage.setItem("user", JSON.stringify(userData));
+          // Limpa tokens sensíveis do hash da URL por segurança
+          window.history.replaceState(null, "", window.location.pathname);
 
           setStatus("success");
           setMessage("Email confirmado com sucesso! Redirecionando...");
