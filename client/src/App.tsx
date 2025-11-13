@@ -15,6 +15,7 @@ import Logs from "@/pages/logs";
 import Configuracoes from "@/pages/configuracoes";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
+import AuthConfirm from "@/pages/auth-confirm";
 import NotFound from "@/pages/not-found";
 import { Loader2, LogOut } from "lucide-react";
 
@@ -117,6 +118,7 @@ function Router() {
     <Switch>
       <Route path="/login">{() => <PublicRoute component={Login} />}</Route>
       <Route path="/register">{() => <PublicRoute component={Register} />}</Route>
+      <Route path="/auth/confirm" component={AuthConfirm} />
       <Route>{() => <AuthenticatedLayout />}</Route>
     </Switch>
   );

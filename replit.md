@@ -88,11 +88,23 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
 ### Configuração Supabase
 
 #### Configurações Obrigatórias:
-1. **Desabilitar Confirmação de Email** (crítico para funcionamento):
-   - Acesse: Supabase Dashboard > Authentication > Providers > Email
-   - Desabilite: "Confirm email" 
-   - **Motivo**: Sistema interno onde validação ocorre via certificado digital
-   - **Sem isso**: Registro retorna "Conta criada! Por favor, verifique seu email..." mas usuário não consegue logar
+
+**OPÇÃO A - Sem Confirmação de Email (Recomendado para apps internos):**
+1. Acesse: Supabase Dashboard > Authentication > Providers > Email
+2. Desabilite: "Confirm email" 
+3. **Motivo**: Sistema interno onde validação ocorre via certificado digital
+4. **Resultado**: Login imediato após registro
+
+**OPÇÃO B - Com Confirmação de Email (Se exigido pela organização):**
+1. Acesse: Supabase Dashboard > Authentication > URL Configuration
+2. Configure "Site URL" como: `https://seu-dominio.replit.app` (ou seu domínio customizado)
+3. Configure "Redirect URLs" adicionando: `https://seu-dominio.replit.app/auth/confirm`
+4. **Resultado**: Usuário recebe email → clica no link → é redirecionado para /auth/confirm → login automático
+
+**IMPORTANTE**: Se escolher Opção B, certifique-se de que:
+- A URL de callback `/auth/confirm` está implementada (já incluída no código)
+- O domínio configurado no Supabase corresponde exatamente ao domínio do seu app
+- Em desenvolvimento local, use: `http://localhost:5000/auth/confirm`
 
 #### Secrets Necessárias:
 - **Anon Key**: Usado para operações do usuário (login, register, refresh)
