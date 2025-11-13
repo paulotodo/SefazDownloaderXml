@@ -7,20 +7,46 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-export async function apiRequest(
-  method: string,
+export async function apiRequest<T = any>(
   url: string,
-  data?: unknown | undefined,
-): Promise<Response> {
+  options?: RequestInit,
+): Promise<T> {
+  // Busca token do localStorage (apenas no browser)
+  const sessionStr = typeof window !== 'undefined' ? localStorage.getItem("session") : null;
+  
+  // Detecta se o body é FormData para não sobrescrever Content-Type
+  const isFormData = options?.body instanceof FormData;
+  
+  let headers: Record<string, string> = {
+    ...(!isFormData && { "Content-Type": "application/json" }),
+    ...options?.headers as Record<string, string>,
+  };
+
+  if (sessionStr) {
+    try {
+      const session = JSON.parse(sessionStr);
+      if (session.accessToken) {
+        headers["Authorization"] = `Bearer ${session.accessToken}`;
+      }
+    } catch (error) {
+      console.error("Erro ao parsear sessão:", error);
+    }
+  }
+
   const res = await fetch(url, {
-    method,
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
+    ...options,
+    headers,
     credentials: "include",
   });
 
   await throwIfResNotOk(res);
-  return res;
+  
+  // Se não tiver body (204 No Content), retorna objeto vazio
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return {} as T;
+  }
+  
+  return res.json();
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
@@ -29,8 +55,24 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    // Busca token do localStorage (apenas no browser)
+    const sessionStr = typeof window !== 'undefined' ? localStorage.getItem("session") : null;
+    let headers: Record<string, string> = {};
+
+    if (sessionStr) {
+      try {
+        const session = JSON.parse(sessionStr);
+        if (session.accessToken) {
+          headers["Authorization"] = `Bearer ${session.accessToken}`;
+        }
+      } catch (error) {
+        console.error("Erro ao parsear sessão:", error);
+      }
+    }
+
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

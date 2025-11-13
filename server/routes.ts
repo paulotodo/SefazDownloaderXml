@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { sefazService } from "./sefaz-service";
+import { authenticateUser } from "./auth-middleware";
+import authRoutes from "./auth-routes";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
@@ -34,15 +36,19 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // ========== DASHBOARD ==========
-  app.get("/api/dashboard/stats", async (req, res) => {
+  // ========== AUTENTICAÇÃO ==========
+  app.use("/api/auth", authRoutes);
+
+  // ========== DASHBOARD ========== (protegida)
+  app.get("/api/dashboard/stats", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const empresas = await storage.getEmpresas();
-      const empresasAtivas = await storage.getEmpresasAtivas();
-      const xmlsHoje = await storage.getXmlsHoje();
-      const sincronizacoesEmAndamento = await storage.getSincronizacoesEmAndamento();
+      const empresas = await storage.getEmpresas(userId);
+      const empresasAtivas = await storage.getEmpresasAtivas(userId);
+      const xmlsHoje = await storage.getXmlsHoje(userId);
+      const sincronizacoesEmAndamento = await storage.getSincronizacoesEmAndamento(userId);
       
-      const sincronizacoes = await storage.getSincronizacoes();
+      const sincronizacoes = await storage.getSincronizacoes(userId);
       const ultimaSincronizacao = sincronizacoes.length > 0
         ? sincronizacoes[0].dataFim || sincronizacoes[0].dataInicio
         : null;
@@ -59,10 +65,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/dashboard/recent-xmls", async (req, res) => {
+  app.get("/api/dashboard/recent-xmls", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const xmls = await storage.getXmlsRecentes(5);
-      const empresas = await storage.getEmpresas();
+      const xmls = await storage.getXmlsRecentes(5, userId);
+      const empresas = await storage.getEmpresas(userId);
       const empresasMap = new Map(empresas.map((e) => [e.id, e]));
 
       const result = xmls.map((xml) => {
@@ -83,10 +90,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/dashboard/recent-logs", async (req, res) => {
+  app.get("/api/dashboard/recent-logs", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const logs = await storage.getLogsRecentes(5);
-      const empresas = await storage.getEmpresas();
+      const logs = await storage.getLogsRecentes(5, userId);
+      const empresas = await storage.getEmpresas(userId);
       const empresasMap = new Map(empresas.map((e) => [e.id, e]));
 
       const result = logs.map((log) => ({
@@ -100,19 +108,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ========== EMPRESAS ==========
-  app.get("/api/empresas", async (req, res) => {
+  // ========== EMPRESAS ========== (protegidas)
+  app.get("/api/empresas", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const empresas = await storage.getEmpresas();
+      const empresas = await storage.getEmpresas(userId);
       res.json(empresas);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
   });
 
-  app.get("/api/empresas/:id", async (req, res) => {
+  app.get("/api/empresas/:id", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const empresa = await storage.getEmpresa(req.params.id);
+      const empresa = await storage.getEmpresa(req.params.id, userId);
       if (!empresa) {
         return res.status(404).json({ error: "Empresa não encontrada" });
       }
@@ -122,7 +132,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/empresas", upload.single("certificado"), async (req, res) => {
+  app.post("/api/empresas", authenticateUser, upload.single("certificado"), async (req, res) => {
+    const userId = req.user!.id;
     try {
       if (!req.file) {
         return res.status(400).json({ error: "Certificado digital é obrigatório" });
@@ -136,8 +147,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         certificadoSenha: req.body.certificadoSenha,
       });
 
-      // Verifica se CNPJ já existe
-      const existing = await storage.getEmpresaByCNPJ(data.cnpj);
+      // Verifica se CNPJ já existe para este usuário
+      const existing = await storage.getEmpresaByCNPJ(data.cnpj, userId);
       if (existing) {
         // Remove arquivo enviado
         await fs.unlink(req.file.path);
@@ -146,11 +157,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const empresa = await storage.createEmpresa({
         ...data,
+        userId,
         certificadoPath: req.file.path,
         ativo: true,
       });
 
       await storage.createLog({
+        userId,
         empresaId: empresa.id,
         sincronizacaoId: null,
         nivel: "info",
@@ -172,10 +185,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/empresas/:id", async (req, res) => {
+  app.patch("/api/empresas/:id", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
       const updates = req.body;
-      const empresa = await storage.updateEmpresa(req.params.id, updates);
+      const empresa = await storage.updateEmpresa(req.params.id, updates, userId);
       
       if (!empresa) {
         return res.status(404).json({ error: "Empresa não encontrada" });
@@ -187,9 +201,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/empresas/:id", async (req, res) => {
+  app.delete("/api/empresas/:id", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const empresa = await storage.getEmpresa(req.params.id);
+      const empresa = await storage.getEmpresa(req.params.id, userId);
       if (!empresa) {
         return res.status(404).json({ error: "Empresa não encontrada" });
       }
@@ -201,10 +216,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Erro ao remover certificado:", error);
       }
 
-      const deleted = await storage.deleteEmpresa(req.params.id);
+      const deleted = await storage.deleteEmpresa(req.params.id, userId);
       
       if (deleted) {
         await storage.createLog({
+          userId,
           empresaId: null,
           sincronizacaoId: null,
           nivel: "info",
@@ -219,9 +235,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/empresas/:id/sincronizar", async (req, res) => {
+  app.post("/api/empresas/:id/sincronizar", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const empresa = await storage.getEmpresa(req.params.id);
+      const empresa = await storage.getEmpresa(req.params.id, userId);
       if (!empresa) {
         return res.status(404).json({ error: "Empresa não encontrada" });
       }
@@ -235,11 +252,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ========== XMLs ==========
-  app.get("/api/xmls", async (req, res) => {
+  // ========== XMLs ========== (protegidos)
+  app.get("/api/xmls", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const xmls = await storage.getXmls();
-      const empresas = await storage.getEmpresas();
+      const xmls = await storage.getXmls(userId);
+      const empresas = await storage.getEmpresas(userId);
       const empresasMap = new Map(empresas.map((e) => [e.id, e]));
 
       const result = xmls.map((xml) => {
@@ -257,9 +275,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/xmls/:id/download", async (req, res) => {
+  app.get("/api/xmls/:id/download", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const xml = await storage.getXml(req.params.id);
+      const xml = await storage.getXml(req.params.id, userId);
       if (!xml) {
         return res.status(404).json({ error: "XML não encontrado" });
       }
@@ -270,11 +289,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ========== LOGS ==========
-  app.get("/api/logs", async (req, res) => {
+  // ========== LOGS ========== (protegidos)
+  app.get("/api/logs", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const logs = await storage.getLogs();
-      const empresas = await storage.getEmpresas();
+      const logs = await storage.getLogs(userId);
+      const empresas = await storage.getEmpresas(userId);
       const empresasMap = new Map(empresas.map((e) => [e.id, e]));
 
       const result = logs.map((log) => ({
@@ -288,17 +308,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ========== SINCRONIZAÇÕES ==========
-  app.get("/api/sincronizacoes", async (req, res) => {
+  // ========== SINCRONIZAÇÕES ========== (protegidas)
+  app.get("/api/sincronizacoes", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
     try {
-      const sincronizacoes = await storage.getSincronizacoes();
+      const sincronizacoes = await storage.getSincronizacoes(userId);
       res.json(sincronizacoes);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
   });
 
-  app.post("/api/sincronizacoes/executar", async (req, res) => {
+  app.post("/api/sincronizacoes/executar", authenticateUser, async (req, res) => {
     try {
       // Executa sincronização de todas as empresas de forma assíncrona
       sefazService.sincronizarTodasEmpresas().catch(console.error);

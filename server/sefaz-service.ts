@@ -196,7 +196,7 @@ export class SefazService {
     }
 
     // Verifica se já existe
-    const existing = await storage.getXmlByChave(chNFe);
+    const existing = await storage.getXmlByChave(chNFe, empresa.userId);
     if (existing) {
       console.log(`XML já existe: ${chNFe}`);
       return;
@@ -219,6 +219,7 @@ export class SefazService {
 
     // Salva no storage
     await storage.createXml({
+      userId: empresa.userId,
       empresaId: empresa.id,
       sincronizacaoId,
       chaveNFe: chNFe,
@@ -229,6 +230,7 @@ export class SefazService {
     });
 
     await storage.createLog({
+      userId: empresa.userId,
       empresaId: empresa.id,
       sincronizacaoId,
       nivel: "info",
@@ -239,6 +241,7 @@ export class SefazService {
 
   async sincronizarEmpresa(empresa: Empresa): Promise<number> {
     const sincronizacao = await storage.createSincronizacao({
+      userId: empresa.userId,
       empresaId: empresa.id,
       dataInicio: new Date(),
       dataFim: null,
@@ -250,6 +253,7 @@ export class SefazService {
     });
 
     await storage.createLog({
+      userId: empresa.userId,
       empresaId: empresa.id,
       sincronizacaoId: sincronizacao.id,
       nivel: "info",
@@ -273,6 +277,7 @@ export class SefazService {
           const errorMsg = `Erro ao chamar SEFAZ: ${error}`;
           
           await storage.createLog({
+            userId: empresa.userId,
             empresaId: empresa.id,
             sincronizacaoId: sincronizacao.id,
             nivel: "error",
@@ -317,6 +322,7 @@ export class SefazService {
               } catch (error) {
                 console.error("Erro ao processar docZip:", error);
                 await storage.createLog({
+                  userId: empresa.userId,
                   empresaId: empresa.id,
                   sincronizacaoId: sincronizacao.id,
                   nivel: "warning",
@@ -338,7 +344,7 @@ export class SefazService {
       }
 
       // Atualiza empresa com novo NSU
-      await storage.updateEmpresa(empresa.id, { ultimoNSU: nsuAtual });
+      await storage.updateEmpresa(empresa.id, { ultimoNSU: nsuAtual }, empresa.userId);
 
       // Finaliza sincronização
       await storage.updateSincronizacao(sincronizacao.id, {
@@ -346,9 +352,10 @@ export class SefazService {
         status: "concluida",
         nsuFinal: nsuAtual,
         xmlsBaixados,
-      });
+      }, empresa.userId);
 
       await storage.createLog({
+        userId: empresa.userId,
         empresaId: empresa.id,
         sincronizacaoId: sincronizacao.id,
         nivel: "info",
@@ -362,9 +369,10 @@ export class SefazService {
         dataFim: new Date(),
         status: "erro",
         mensagemErro: String(error),
-      });
+      }, empresa.userId);
 
       await storage.createLog({
+        userId: empresa.userId,
         empresaId: empresa.id,
         sincronizacaoId: sincronizacao.id,
         nivel: "error",

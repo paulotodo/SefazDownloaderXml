@@ -6,14 +6,22 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
 ## Tecnologias
 - **Frontend**: React, TypeScript, Tailwind CSS, Shadcn UI, React Query, Wouter
 - **Backend**: Node.js, Express, TypeScript
+- **Banco de Dados**: Supabase PostgreSQL com Row-Level Security (RLS)
+- **Autenticação**: Supabase Auth com JWT
 - **Agendamento**: node-cron (execução a cada 1 hora)
 - **Processamento**: fast-xml-parser, pako (gzip)
 - **Upload**: multer (certificados .pfx)
-- **Storage**: In-memory (MemStorage)
+- **Storage**: SupabaseStorage (substituiu MemStorage)
 
 ## Arquitetura
 
 ### Frontend
+- **Autenticação** (`client/src/contexts/AuthContext.tsx`):
+  - Context Provider para gerenciamento global de autenticação
+  - Persistência de sessão no localStorage (com proteção SSR)
+  - Auto-refresh de tokens expirados
+  - Injeção automática de Bearer token em requests (via queryClient)
+  - Rotas protegidas e públicas com redirecionamento
 - **Dashboard**: Estatísticas em tempo real (total de empresas, XMLs hoje, última sincronização)
 - **Empresas**: Lista com busca, cadastro com upload de certificado, exclusão e sincronização manual
 - **XMLs**: Navegador em árvore (CNPJ > Ano > Mês > Arquivos)
@@ -22,7 +30,17 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
 - **Sidebar**: Navegação principal com ícones lucide-react
 
 ### Backend
-- **Storage** (`server/storage.ts`): Interface IStorage com MemStorage para empresas, XMLs, sincronizações e logs
+- **Autenticação** (`server/auth-routes.ts` e `server/auth-middleware.ts`):
+  - Registro e login via Supabase Auth
+  - Middleware JWT protegendo todas as rotas da API
+  - Validação server-side com `supabaseAdmin.auth.getUser(token)`
+  - Refresh de tokens automático
+  - Isolamento de dados por usuário
+- **Storage** (`server/supabase-storage.ts`): 
+  - Implementação IStorage com PostgreSQL via Supabase
+  - Funções de parse (snake_case → camelCase)
+  - Todas as queries filtradas por userId para isolamento multi-tenant
+  - Service role key para cron bypass RLS
 - **SEFAZ Service** (`server/sefaz-service.ts`): 
   - Integração SOAP com NFeDistribuicaoDFe
   - Autenticação com certificados PKCS12
@@ -38,10 +56,11 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
   - Agendamento: `cron.schedule("0 * * * *")` - a cada hora
 
 ### Schema (`shared/schema.ts`)
-- **empresas**: id, cnpj, razaoSocial, uf, ambiente, certificadoPath, certificadoSenha, ativo, ultimoNSU
-- **sincronizacoes**: id, empresaId, dataInicio, dataFim, status, nsuInicial, nsuFinal, xmlsBaixados
-- **xmls**: id, empresaId, sincronizacaoId, chaveNFe, numeroNF, dataEmissao, caminhoArquivo, tamanhoBytes
-- **logs**: id, empresaId, sincronizacaoId, nivel, mensagem, detalhes, timestamp
+- **profiles**: id (UUID), email, nomeCompleto, createdAt, updatedAt (extends auth.users)
+- **empresas**: id, userId (FK), cnpj, razaoSocial, uf, ambiente, certificadoPath, certificadoSenha, ativo, ultimoNSU, createdAt, updatedAt
+- **sincronizacoes**: id, userId (FK), empresaId (FK), dataInicio, dataFim, status, nsuInicial, nsuFinal, xmlsBaixados, mensagemErro, createdAt
+- **xmls**: id, userId (FK), empresaId (FK), sincronizacaoId (FK), chaveNFe, numeroNF, dataEmissao, caminhoArquivo, tamanhoBytes, createdAt
+- **logs**: id, userId (FK), empresaId (FK), sincronizacaoId (FK), nivel, mensagem, detalhes, timestamp
 
 ## Fluxo de Sincronização
 1. Cron executa `sefazService.sincronizarTodasEmpresas()` a cada hora
@@ -56,27 +75,46 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
    - Finaliza sincronização com status "concluida" ou "erro"
 
 ## Segurança
+- **Autenticação JWT**: Tokens validados server-side com service role key
+- **Isolamento Multi-Tenant**: Row-Level Security (RLS) no Supabase para separação de dados por usuário
+- **Proteção de Rotas**: Middleware `authenticateUser` em todas as rotas da API
+- **Service Role para Cron**: Sincronizações automáticas usam service role key para bypass RLS
 - Certificados .pfx armazenados em `./certificados/`
-- Senhas criptografadas no storage (implementar hash em produção)
+- Senhas de certificados criptografadas (implementar hash em produção)
 - Validação com Zod em todas as entradas
 - HTTPS obrigatório para SEFAZ
 - Confirmação modal para exclusão de empresas
 
+### Configuração Supabase
+- **Anon Key**: Usado para operações do usuário (login, register, refresh)
+- **Service Role Key**: Usado para validação server-side e cron jobs
+- **RLS Policies**: Implementadas em todas as tabelas filtrando por userId
+- **Nota**: Supabase pode bloquear emails de domínios de teste (example.com) - use domínios reais para testes
+
 ## Deploy
-- Configurar variáveis de ambiente: `XML_DEST_PATH`
+- Configurar variáveis de ambiente: 
+  - `SUPABASE_URL`: URL do projeto Supabase
+  - `SUPABASE_ANON_KEY`: Anon key para operações do usuário
+  - `SUPABASE_SERVICE_ROLE_KEY`: Service role key para server-side e cron
+  - `SESSION_SECRET`: Secret para sessões Express
+  - `XML_DEST_PATH`: Caminho para salvar XMLs
 - Upload inicial de certificados válidos
 - Garantir diretórios `./certificados` e `./xmls` com permissões adequadas
-- Em produção: usar banco PostgreSQL ao invés de MemStorage
+- Executar schema SQL no Supabase (`supabase-schema.sql`)
+- Configurar RLS policies no Supabase
+- Em produção: migrar certificados para Supabase Storage
 
 ## Melhorias Futuras
 - Notificações por email quando novos XMLs forem baixados
 - Exportação de relatórios em PDF/Excel
-- Backup automático para S3/Google Drive
+- Backup automático para S3/Google Drive (ou Supabase Storage)
 - Dashboard com gráficos de evolução
 - Filtros avançados por período de emissão
-- Autenticação de usuário
-- Retry exponencial com backoff
-- Rate limiting para proteção da API SEFAZ
+- Retry exponencial com backoff para SEFAZ
+- Rate limiting para proteção da API
+- Migrar certificados .pfx para Supabase Storage
+- Implementar 2FA (Two-Factor Authentication)
+- Logs de auditoria para ações críticas
 
 ## Última Atualização
 13 de novembro de 2025
