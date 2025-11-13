@@ -86,8 +86,19 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
 - Confirmação modal para exclusão de empresas
 
 ### Configuração Supabase
+
+#### Configurações Obrigatórias:
+1. **Desabilitar Confirmação de Email** (crítico para funcionamento):
+   - Acesse: Supabase Dashboard > Authentication > Providers > Email
+   - Desabilite: "Confirm email" 
+   - **Motivo**: Sistema interno onde validação ocorre via certificado digital
+   - **Sem isso**: Registro retorna "Conta criada! Por favor, verifique seu email..." mas usuário não consegue logar
+
+#### Secrets Necessárias:
 - **Anon Key**: Usado para operações do usuário (login, register, refresh)
 - **Service Role Key**: Usado para validação server-side e cron jobs
+
+#### Segurança:
 - **RLS Policies**: Implementadas em todas as tabelas filtrando por userId
 - **Nota**: Supabase pode bloquear emails de domínios de teste (example.com) - use domínios reais para testes
 

@@ -49,10 +49,16 @@ export default function Register() {
       });
       navigate("/");
     } catch (error: any) {
+      // Verifica se é erro de confirmação de email
+      const errorMessage = error.message || "Ocorreu um erro ao criar sua conta";
+      const isEmailConfirmation = errorMessage.includes("confirmar o cadastro") || 
+                                   errorMessage.includes("verifique seu email");
+      
       toast({
-        title: "Erro ao criar conta",
-        description: error.message || "Ocorreu um erro ao criar sua conta",
-        variant: "destructive",
+        title: isEmailConfirmation ? "⚠️ Confirmação de Email Necessária" : "Erro ao criar conta",
+        description: errorMessage,
+        variant: isEmailConfirmation ? "default" : "destructive",
+        duration: isEmailConfirmation ? 10000 : 5000,
       });
     } finally {
       setIsLoading(false);

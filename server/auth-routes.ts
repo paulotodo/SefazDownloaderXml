@@ -29,8 +29,25 @@ router.post("/register", async (req: Request, res: Response) => {
       return res.status(400).json({ error: error.message });
     }
 
-    if (!data.user || !data.session) {
+    // Debug: log completo da resposta do Supabase
+    console.log("Resposta do Supabase signUp:", {
+      hasUser: !!data.user,
+      hasSession: !!data.session,
+      userId: data.user?.id,
+      email: data.user?.email,
+    });
+
+    if (!data.user) {
+      console.error("Supabase não retornou user após signUp");
       return res.status(400).json({ error: "Erro ao criar usuário" });
+    }
+
+    if (!data.session) {
+      console.warn("⚠️ Supabase exige confirmação de email - usuário criado mas sem sessão ativa");
+      return res.status(400).json({ 
+        error: "Conta criada! Por favor, verifique seu email para confirmar o cadastro antes de fazer login.",
+        requiresEmailConfirmation: true 
+      });
     }
 
     // Valida token com service role para garantir que funcionará no middleware
