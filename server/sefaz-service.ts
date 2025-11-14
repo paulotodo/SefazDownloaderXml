@@ -143,9 +143,6 @@ export class SefazService {
   private parseSOAPResponse(xmlResponse: string): SefazResponse {
     const parsed = this.parser.parse(xmlResponse);
 
-    // Log completo do parsed para debug
-    console.log('🔍 Estrutura parseada (top-level keys):', Object.keys(parsed));
-
     // Navega pela estrutura SOAP - suporta múltiplos namespaces
     const envelope = 
       parsed["soap12:Envelope"] || 
@@ -153,11 +150,9 @@ export class SefazService {
       parsed["Envelope"];
     
     if (!envelope) {
-      console.error('❌ Envelope não encontrado. Keys disponíveis:', Object.keys(parsed));
+      console.error('❌ Envelope SOAP não encontrado');
       return { cStat: "", xMotivo: "Envelope SOAP não encontrado", docZips: [] };
     }
-    
-    console.log('🔍 Envelope keys:', Object.keys(envelope));
     
     const body = 
       envelope["soap12:Body"] || 
@@ -165,33 +160,27 @@ export class SefazService {
       envelope["Body"];
     
     if (!body) {
-      console.error('❌ Body não encontrado. Keys disponíveis:', Object.keys(envelope));
+      console.error('❌ Body SOAP não encontrado');
       return { cStat: "", xMotivo: "Body SOAP não encontrado", docZips: [] };
     }
-    
-    console.log('🔍 Body keys:', Object.keys(body));
     
     const response =
       body["nfeDistDFeInteresseResponse"] ||
       body["nfe:nfeDistDFeInteresseResponse"];
     
     if (!response) {
-      console.error('❌ Response não encontrada. Keys disponíveis:', Object.keys(body));
+      console.error('❌ nfeDistDFeInteresseResponse não encontrada');
       return { cStat: "", xMotivo: "Response não encontrada", docZips: [] };
     }
-    
-    console.log('🔍 Response keys:', Object.keys(response));
     
     const result = 
       response["nfeDistDFeInteresseResult"] || 
       response["nfe:nfeDistDFeInteresseResult"];
     
     if (!result) {
-      console.error('❌ Result não encontrado. Keys disponíveis:', Object.keys(response));
+      console.error('❌ nfeDistDFeInteresseResult não encontrado');
       return { cStat: "", xMotivo: "Result não encontrado", docZips: [] };
     }
-    
-    console.log('🔍 Result keys:', Object.keys(result));
     
     // Tenta encontrar retDistDFeInt em várias estruturas possíveis
     const retDistDFeInt = 
@@ -202,11 +191,9 @@ export class SefazService {
       parsed["retDistDFeInt"];
 
     if (!retDistDFeInt) {
-      console.error('❌ retDistDFeInt não encontrado. Keys disponíveis em result:', Object.keys(result));
+      console.error('❌ retDistDFeInt não encontrado');
       return { cStat: "", xMotivo: "retDistDFeInt não encontrado", docZips: [] };
     }
-    
-    console.log('🔍 retDistDFeInt keys:', Object.keys(retDistDFeInt));
 
     const cStat = String(retDistDFeInt.cStat || "");
     const xMotivo = String(retDistDFeInt.xMotivo || "");
@@ -375,24 +362,7 @@ export class SefazService {
           }
         }
 
-        // Log da resposta XML bruta para debug
-        console.log('📨 Resposta XML SEFAZ (primeiros 1000 chars):', responseXml.substring(0, 1000));
-        
-        // Salvar XML completo em arquivo temporário para debug
-        const debugPath = '/tmp/sefaz-response-debug.xml';
-        fsSync.writeFileSync(debugPath, responseXml, 'utf-8');
-        console.log(`💾 XML completo salvo em: ${debugPath}`);
-        
         const response = this.parseSOAPResponse(responseXml);
-        
-        // Log detalhado da resposta parseada
-        console.log('📊 Resposta SEFAZ parseada:', JSON.stringify({
-          cStat: response.cStat,
-          xMotivo: response.xMotivo,
-          ultNSU: response.ultNSU,
-          maxNSU: response.maxNSU,
-          docZipsCount: response.docZips?.length || 0
-        }, null, 2));
 
         if (response.cStat === "137") {
           // 137: Nenhum documento localizado
