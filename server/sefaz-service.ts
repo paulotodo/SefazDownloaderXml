@@ -372,6 +372,15 @@ export class SefazService {
         // Usa distNSU conforme NT 2014.002 (não consNSU)
         const envelope = this.buildSOAPEnvelopeDistNSU(empresa.cnpj, empresa.uf, empresa.ambiente, nsuAtual);
         
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId: sincronizacao.id,
+          nivel: "info",
+          mensagem: `Sincronização - Consultando SEFAZ`,
+          detalhes: JSON.stringify({ iteracao: iteracao + 1, ultNSUEnviado: nsuAtual }),
+        });
+        
         let responseXml: string;
         try {
           responseXml = await this.callDistDFe(empresa, envelope);
@@ -385,7 +394,12 @@ export class SefazService {
             sincronizacaoId: sincronizacao.id,
             nivel: "error",
             mensagem: errorMsg,
-            detalhes: JSON.stringify({ error: String(error), stack: (error as Error).stack }),
+            detalhes: JSON.stringify({ 
+              iteracao: iteracao + 1,
+              ultNSUEnviado: nsuAtual,
+              error: String(error), 
+              stack: (error as Error).stack 
+            }),
           });
 
           // Em ambiente de desenvolvimento (sem certificado válido), permite simulação
@@ -409,6 +423,21 @@ export class SefazService {
         }
 
         const response = this.parseSOAPResponse(responseXml);
+        
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId: sincronizacao.id,
+          nivel: "info",
+          mensagem: `Sincronização - Resposta SEFAZ`,
+          detalhes: JSON.stringify({ 
+            iteracao: iteracao + 1,
+            cStat: response.cStat,
+            xMotivo: response.xMotivo,
+            ultNSURetornado: response.ultNSU,
+            maxNSURetornado: response.maxNSU
+          }),
+        });
 
         if (response.cStat === "137") {
           // 137: Nenhum documento localizado neste lote
@@ -440,6 +469,11 @@ export class SefazService {
           nsuAtual = response.ultNSU || nsuAtual;
           maxNSU = response.maxNSU || nsuAtual;
         } else {
+          // Erro 656: Bloqueio temporário - mensagem mais clara
+          if (response.cStat === "656") {
+            const mensagemClara = `Bloqueio temporário da SEFAZ (cStat 656): ${response.xMotivo}. Aguarde 1 hora antes de tentar novamente. Isso ocorre quando há múltiplas tentativas com NSU inválido.`;
+            throw new Error(mensagemClara);
+          }
           throw new Error(`Erro SEFAZ: ${response.cStat} - ${response.xMotivo}`);
         }
 
@@ -631,11 +665,60 @@ export class SefazService {
         );
         chamadas++;
 
-        const xmlResponse = await this.callDistDFe(empresa, envelope);
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId: null,
+          nivel: "info",
+          mensagem: `Reconciliação - Consultando SEFAZ`,
+          detalhes: JSON.stringify({ iteracao: i + 1, ultNSUEnviado: nsuAtual }),
+        });
+
+        let xmlResponse: string;
+        try {
+          xmlResponse = await this.callDistDFe(empresa, envelope);
+        } catch (error) {
+          // Loga erro com contexto de NSU e iteração
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: null,
+            nivel: "error",
+            mensagem: `Reconciliação - Erro ao chamar SEFAZ: ${error}`,
+            detalhes: JSON.stringify({ 
+              iteracao: i + 1,
+              ultNSUEnviado: nsuAtual,
+              error: String(error), 
+              stack: (error as Error).stack 
+            }),
+          });
+          throw error; // Re-lança para catch externo
+        }
+
         const response = this.parseSOAPResponse(xmlResponse);
+
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId: null,
+          nivel: "info",
+          mensagem: `Reconciliação - Resposta SEFAZ`,
+          detalhes: JSON.stringify({ 
+            iteracao: i + 1,
+            cStat: response.cStat,
+            xMotivo: response.xMotivo,
+            ultNSURetornado: response.ultNSU,
+            maxNSURetornado: response.maxNSU
+          }),
+        });
 
         // Valida resposta SEFAZ
         if (response.cStat !== "137" && response.cStat !== "138") {
+          // Erro 656: Bloqueio temporário - mensagem mais clara
+          if (response.cStat === "656") {
+            const mensagemClara = `Bloqueio temporário da SEFAZ (cStat 656): ${response.xMotivo}. Aguarde 1 hora antes de tentar novamente. Isso ocorre quando há múltiplas tentativas com NSU inválido.`;
+            throw new Error(mensagemClara);
+          }
           throw new Error(`SEFAZ retornou cStat ${response.cStat}: ${response.xMotivo}`);
         }
 

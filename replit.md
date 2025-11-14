@@ -128,3 +128,10 @@ The application uses a modern full-stack approach:
   - Apenas para empresas que já sincronizaram antes
   - Quando quer apenas atualizar o ponteiro NSU sem baixar XMLs
   - Útil quando há backlog grande e você quer avançar rapidamente
+
+**Bloqueio temporário (cStat=656):**
+- A SEFAZ aplica bloqueio de 1 hora quando detecta consumo indevido
+- Causas: Múltiplas tentativas com NSU inválido ou violação da NT 2014.002
+- Solução: Aguardar 1 hora antes de nova tentativa
+- Logs detalhados mostram NSU enviado e resposta SEFAZ para diagnóstico
+- Ver `SEFAZ-BLOQUEIO-TEMPORARIO.md` para detalhes completos
