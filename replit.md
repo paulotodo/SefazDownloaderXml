@@ -79,6 +79,13 @@ Aplicativo web para download automático de XMLs (nfeProc) da SEFAZ com sincroni
 - **Isolamento Multi-Tenant**: Row-Level Security (RLS) no Supabase para separação de dados por usuário
 - **Proteção de Rotas**: Middleware `authenticateUser` em todas as rotas da API
 - **Service Role para Cron**: Sincronizações automáticas usam service role key para bypass RLS
+- **Validação de Certificados Digitais**: 
+  - Validação de senha e formato no momento do upload (antes de salvar)
+  - Verificação de expiração (bloqueia certificados expirados ou ainda não válidos)
+  - Extração de informações do certificado (titular, emissor, validade)
+  - Aviso quando certificado expira em menos de 30 dias
+  - Mensagens de erro claras e acionáveis
+  - Remoção automática do arquivo em caso de validação falha
 - Certificados .pfx armazenados em `./certificados/`
 - Senhas de certificados criptografadas (implementar hash em produção)
 - Validação com Zod em todas as entradas
@@ -223,12 +230,26 @@ docker compose logs -f app
 - ✅ Novo utilitário `server/cert-loader.ts`:
   - Converte certificados PFX (DES/3DES) para formato PEM
   - Cache em memória para performance
-  - Validações robustas com mensagens claras
+  - **Validação completa de certificados no upload** (`validateCertificate()`):
+    - Verifica senha e formato
+    - Detecta certificados expirados ou ainda não válidos
+    - Extrai informações (titular, emissor, datas de validade)
+    - Calcula dias até expiração (aviso com <30 dias)
+    - Retorna mensagens de erro claras
   - Type-safe (TypeScript strict mode)
 - ✅ `server/sefaz-service.ts` adaptado:
   - Usa `loadPKCS12Certificate()` para carregar certificados
   - HTTPS Agent com certificados PEM (key, cert, ca)
   - Compatível com OpenSSL 3.x (Node.js 18+/20+)
+- ✅ `server/routes.ts` (POST /api/empresas):
+  - Validação ANTES de salvar no banco de dados
+  - Mensagens específicas por tipo de erro:
+    - "Senha do certificado incorreta"
+    - "Certificado expirado em [data]"
+    - "Certificado ainda não é válido. Será válido a partir de [data]"
+    - "Certificado inválido ou corrompido"
+  - Remoção automática do arquivo .pfx em caso de falha
+  - Logs detalhados com informações do certificado
 - ✅ Documentação completa: `TROUBLESHOOTING-CERTIFICADOS.md`
 - ✅ Revisado e aprovado pelo architect
 
@@ -236,9 +257,11 @@ docker compose logs -f app
 - `node-forge` consegue ler PKCS12 com algoritmos legados (DES/3DES)
 - Converte para PEM que é **nativamente suportado** pelo OpenSSL 3.x
 - Evita completamente o erro "Unsupported PKCS12 PFX data"
+- **Validação preventiva** evita erros na sincronização
 
 **Arquivos modificados/criados:**
-- ✅ `server/cert-loader.ts` (novo)
+- ✅ `server/cert-loader.ts` (novo + validateCertificate)
+- ✅ `server/routes.ts` (validação no upload)
 - ✅ `server/sefaz-service.ts` (adaptado)
 - ✅ `TROUBLESHOOTING-CERTIFICADOS.md` (atualizado)
 - ✅ `package.json` (node-forge + @types/node-forge)
