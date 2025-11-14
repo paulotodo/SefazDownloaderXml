@@ -6,6 +6,7 @@ import { XMLParser } from "fast-xml-parser";
 import * as pako from "pako";
 import { storage } from "./storage";
 import type { Empresa } from "@shared/schema";
+import { loadPKCS12Certificate } from "./cert-loader";
 
 const UF_CODE_MAP: Record<string, number> = {
   AC: 12, AL: 27, AM: 13, AP: 16, BA: 29, CE: 23,
@@ -75,47 +76,31 @@ export class SefazService {
       try {
         const url = new URL(ENDPOINTS[empresa.ambiente as "prod" | "hom"]);
 
-        // Carrega o certificado .pfx
-        let pfxBuffer: Buffer;
+        // Carrega e converte certificado PKCS12 para PEM usando node-forge
+        // Isto resolve o problema "Unsupported PKCS12 PFX data" com certificados A1 brasileiros
+        // que usam algoritmos legados (DES/3DES) não suportados por OpenSSL 3.x
+        let certData;
         try {
-          pfxBuffer = await fs.readFile(empresa.certificadoPath);
-        } catch (error) {
-          throw new Error(`Erro ao ler certificado: ${error}`);
+          certData = await loadPKCS12Certificate(
+            empresa.certificadoPath,
+            empresa.certificadoSenha
+          );
+        } catch (error: any) {
+          // Erros do cert-loader já são formatados adequadamente
+          throw error;
         }
 
-        // Validar tamanho mínimo do certificado
-        if (pfxBuffer.length < 100) {
-          throw new Error(`Certificado inválido ou corrompido (tamanho muito pequeno: ${pfxBuffer.length} bytes)`);
-        }
-
-        // Cria agente HTTPS com certificado
-        // IMPORTANTE: Certificados A1 brasileiros usam algoritmos legados (DES, 3DES)
-        // que requerem configurações especiais no OpenSSL 3.x
-        let agent: https.Agent;
-        try {
-          agent = new https.Agent({
-            pfx: pfxBuffer,
-            passphrase: empresa.certificadoSenha,
-            rejectUnauthorized: true, // Validar certificados SSL
-            // Suporte para certificados legados (A1 brasileiros)
-            secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
-            minVersion: 'TLSv1.2' as any, // Mínimo TLS 1.2
-            maxVersion: 'TLSv1.3' as any, // Máximo TLS 1.3
-          });
-        } catch (certError: any) {
-          // Erros comuns de certificado
-          if (certError.message?.includes('Unsupported') || certError.message?.includes('PKCS12')) {
-            throw new Error(
-              `Certificado PKCS12 inválido ou corrompido. ` +
-              `Verifique: (1) Arquivo .pfx não corrompido, (2) Senha correta, ` +
-              `(3) Certificado não expirado. Erro: ${certError.message}`
-            );
-          } else if (certError.message?.includes('MAC verify error')) {
-            throw new Error(`Senha do certificado incorreta. Verifique a senha do arquivo .pfx`);
-          } else {
-            throw new Error(`Erro ao carregar certificado: ${certError.message}`);
-          }
-        }
+        // Cria agente HTTPS com certificado em formato PEM
+        // PEM é suportado nativamente pelo OpenSSL 3.x, evitando problemas com algoritmos legados
+        const agent = new https.Agent({
+          key: certData.key,
+          cert: certData.cert,
+          ca: certData.ca.length > 0 ? certData.ca : undefined,
+          rejectUnauthorized: true, // Validar certificados SSL
+          secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+          minVersion: 'TLSv1.2' as any, // Mínimo TLS 1.2
+          maxVersion: 'TLSv1.3' as any, // Máximo TLS 1.3
+        });
 
         const options: https.RequestOptions = {
           hostname: url.hostname,
@@ -185,7 +170,7 @@ export class SefazService {
 
     if (lote?.docZip) {
       const docs = Array.isArray(lote.docZip) ? lote.docZip : [lote.docZip];
-      docZips = docs.map((doc) => ({
+      docZips = docs.map((doc: any) => ({
         NSU: doc.NSU || doc["@_NSU"] || "",
         schema: doc.schema || doc["@_schema"] || "",
         content: doc["#text"] || doc["_text"] || "",

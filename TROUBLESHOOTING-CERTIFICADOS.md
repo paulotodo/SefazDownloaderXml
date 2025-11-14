@@ -13,19 +13,33 @@ Error: Unsupported PKCS12 PFX data
 
 ### ✅ Solução Implementada
 
-O código foi corrigido para suportar certificados legados:
+**Arquitetura da Solução:**
+
+O sistema usa a biblioteca **`node-forge`** para converter certificados PKCS12 legados para formato PEM antes de criar o HTTPS Agent:
 
 ```typescript
+// 1. Converter PKCS12 → PEM usando node-forge (server/cert-loader.ts)
+const certData = await loadPKCS12Certificate(
+  empresa.certificadoPath,
+  empresa.certificadoSenha
+);
+
+// 2. Criar agent HTTPS com certificados em formato PEM
 const agent = new https.Agent({
-  pfx: pfxBuffer,
-  passphrase: empresa.certificadoSenha,
+  key: certData.key,      // Chave privada em PEM
+  cert: certData.cert,    // Certificado em PEM
+  ca: certData.ca,        // Chain de CAs em PEM
   rejectUnauthorized: true,
-  // Habilita suporte para algoritmos legados
   secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
   minVersion: 'TLSv1.2',
   maxVersion: 'TLSv1.3',
 });
 ```
+
+**Por que funciona?**
+- **node-forge** consegue ler PKCS12 com algoritmos legados (DES/3DES)
+- Converte para formato PEM que é **nativamente suportado** pelo OpenSSL 3.x
+- Evita completamente o erro "Unsupported PKCS12 PFX data"
 
 ### Verificações Automáticas
 
@@ -34,6 +48,8 @@ O sistema agora valida:
 2. ✅ Tamanho mínimo do certificado (> 100 bytes)
 3. ✅ Senha do certificado (MAC verification)
 4. ✅ Formato PKCS12 válido
+5. ✅ Presença de chave privada e certificado
+6. ✅ Cache de certificados convertidos (performance)
 
 ---
 
@@ -154,24 +170,34 @@ openssl x509 -in cert.pem -text -noout
 
 **✅ Este sistema já está configurado para todas as versões**
 
-### OpenSSL Legacy Provider
+### Arquivos da Solução
 
-Em casos extremos (certificados muito antigos), pode ser necessário habilitar o legacy provider:
+**`server/cert-loader.ts`** (utilitário de conversão):
+- Carrega arquivo .pfx do disco
+- Usa `node-forge` para parsing PKCS12
+- Converte para formato PEM (key, cert, ca)
+- Implementa cache em memória
+- Retorna erros claros e acionáveis
 
-```bash
-# Variável de ambiente (desenvolvimento)
-export NODE_OPTIONS="--openssl-legacy-provider"
-npm run dev
+**`server/sefaz-service.ts`** (integração):
+- Chama `loadPKCS12Certificate()` antes de criar HTTPS Agent
+- Usa certificados PEM em vez de buffer PFX
+- Mantém todas as verificações de segurança
 
-# Docker (produção)
-# Adicionar ao docker-compose.yml:
-services:
-  app:
-    environment:
-      - NODE_OPTIONS=--openssl-legacy-provider
+### Dependências
+
+```json
+{
+  "dependencies": {
+    "node-forge": "^1.3.1"
+  },
+  "devDependencies": {
+    "@types/node-forge": "^1.3.11"
+  }
+}
 ```
 
-⚠️ **Não recomendado**: Use apenas se o código atual não funcionar.
+⚠️ **Importante**: A biblioteca `node-forge` já está instalada no projeto.
 
 ---
 

@@ -92,8 +92,8 @@ export async function loadPKCS12Certificate(
     const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
 
     // Verificar se encontrou chave privada
-    if (!keyBags[forge.pki.oids.pkcs8ShroudedKeyBag] || 
-        keyBags[forge.pki.oids.pkcs8ShroudedKeyBag].length === 0) {
+    const keyBagArray = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag];
+    if (!keyBagArray || keyBagArray.length === 0) {
       throw new Error(
         `Chave privada não encontrada no certificado. ` +
         `Verifique se o arquivo .pfx contém a chave privada.`
@@ -101,7 +101,8 @@ export async function loadPKCS12Certificate(
     }
 
     // Verificar se encontrou certificados
-    if (!bags[forge.pki.oids.certBag] || bags[forge.pki.oids.certBag].length === 0) {
+    const certBagArray = bags[forge.pki.oids.certBag];
+    if (!certBagArray || certBagArray.length === 0) {
       throw new Error(
         `Certificado não encontrado no arquivo .pfx. ` +
         `Verifique se o arquivo está completo.`
@@ -109,15 +110,15 @@ export async function loadPKCS12Certificate(
     }
 
     // Extrair chave privada
-    const keyBag = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag][0];
-    if (!keyBag.key) {
+    const keyBag = keyBagArray[0];
+    if (!keyBag || !keyBag.key) {
       throw new Error('Erro ao extrair chave privada do certificado');
     }
     const privateKey = keyBag.key;
     const privateKeyPem = forge.pki.privateKeyToPem(privateKey);
 
     // Extrair certificado principal e cadeia (CA certificates)
-    const certBags = bags[forge.pki.oids.certBag];
+    const certBags = certBagArray;
     const certPems: string[] = [];
     const caPems: string[] = [];
 
