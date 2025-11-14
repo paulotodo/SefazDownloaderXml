@@ -4,6 +4,16 @@
 
 Quando a SEFAZ detecta **consumo indevido** do serviço NFeDistribuicaoDFe, ela aplica um bloqueio temporário de **1 hora** para o CNPJ.
 
+## Sistema de Bloqueio Automático (✨ NOVO)
+
+Quando o erro 656 é detectado, o sistema automaticamente:
+
+1. **Salva timestamp de bloqueio**: Campo `bloqueadoAte` na empresa é preenchido com data/hora de desbloqueio (now + 61 minutos com margem de segurança)
+2. **Bloqueia novas tentativas**: Sincronizações (manual e automática) são impedidas até o desbloqueio, evitando loop infinito
+3. **Desbloqueio automático**: Campo é limpo automaticamente após primeira sincronização bem-sucedida
+4. **Feedback claro**: Interface mostra tempo restante e mensagem explicativa
+5. **Logs detalhados**: Registra bloqueio, tentativas bloqueadas e desbloqueio
+
 ## Quando acontece?
 
 O erro `cStat=656: Rejeição: Consumo Indevido` ocorre quando:
@@ -81,6 +91,9 @@ Detalhes: {"iteracao":1,"ultNSUEnviado":"000000000000000","error":"...","stack":
 ## Status atual do sistema
 
 ✅ **Correções implementadas:**
+- ✨ **Bloqueio automático de 61 minutos após erro 656** (evita loop infinito)
+- ✨ **Verificação de bloqueio antes de sincronizar** (manual e automático)
+- ✨ **Desbloqueio automático** após sincronização bem-sucedida
 - Validação que bloqueia reconciliação de empresas com NSU=0
 - Frontend oculta botão "Alinhar NSU" para empresas novas
 - Uso correto de `<distNSU><ultNSU>` conforme NT 2014.002
@@ -89,6 +102,8 @@ Detalhes: {"iteracao":1,"ultNSUEnviado":"000000000000000","error":"...","stack":
 - Mensagem clara explicando bloqueio temporário
 
 ✅ **Proteções ativas:**
+- ⏱️ **Bloqueio persistente**: Armazenado em `empresas.bloqueadoAte`
+- 🔒 **Bloqueio respeitado**: Cron e endpoints manuais verificam bloqueio
 - Safety guards: 100 iterações (reconciliação), 200 iterações (sincronização)
 - Delay entre consultas: 300-500ms
 - Alinhamento completo garantido (ultNSU === maxNSU)
