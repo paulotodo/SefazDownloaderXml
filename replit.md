@@ -49,6 +49,47 @@ The application uses a modern full-stack approach:
 
 ## Recent Changes
 
+### ✅ Sistema de Bloqueio Automático para erro 656 (14/11/2025) - CRITICAL FIX
+**Objetivo:** Evitar loop infinito de bloqueios quando SEFAZ retorna cStat=656 (consumo indevido).
+
+**Problema resolvido:**
+- Antes: Sistema podia tentar sincronizar antes dos 60min de bloqueio, gerando novo bloqueio infinitamente
+- Agora: Bloqueio de 61min armazenado persistentemente, impedindo tentativas até desbloqueio
+
+**Mudanças implementadas:**
+
+#### 1. Schema atualizado (`shared/schema.ts`)
+- Campo `bloqueadoAte: timestamp("bloqueado_ate")` (nullable) adicionado à tabela empresas
+- Campo gerenciado automaticamente (omitido do insertSchema)
+
+#### 2. Detecção e registro de bloqueio (`server/sefaz-service.ts`)
+- Quando cStat=656: salva `bloqueadoAte = new Date(now + 61 * 60 * 1000)`
+- Log detalhado com timestamp de desbloqueio e diagnóstico
+- Mensagem clara indicando conflito potencial com sistemas concorrentes
+
+#### 3. Verificação antes de sincronizar
+- Método `sincronizarEmpresa`: verifica bloqueio antes de criar sincronização
+- Método `reconciliarUltimoNSU`: verifica bloqueio antes de reconciliar
+- Método `sincronizarTodasEmpresas` (cron): pula empresas bloqueadas automaticamente
+- Mensagens informam tempo restante em minutos
+
+#### 4. Desbloqueio automático
+- Campo `bloqueadoAte` limpo (null) após sincronização bem-sucedida
+- Sistema retorna ao normal automaticamente sem intervenção manual
+
+**Benefícios:**
+- ✅ Evita loop infinito de bloqueios (tentativa prematura → novo bloqueio → repetir)
+- ✅ Feedback claro ao usuário sobre tempo restante
+- ✅ Desbloqueio automático após recuperação
+- ✅ Logs detalhados para diagnóstico
+- ✅ Sistema production-ready conforme NT 2014.002
+
+**Arquivos modificados:**
+- `shared/schema.ts`: Campo bloqueadoAte
+- `server/supabase-storage.ts`: Parse e update de bloqueadoAte
+- `server/sefaz-service.ts`: Lógica de bloqueio/verificação/desbloqueio
+- `SEFAZ-BLOQUEIO-TEMPORARIO.md`: Documentação completa
+
 ### ✅ Adequação à NT 2014.002 da SEFAZ (14/11/2025) - CRITICAL
 **Objetivo:** Adequar todas as consultas à SEFAZ conforme Nota Técnica 2014.002 para evitar rejeição cStat=656 (uso indevido do serviço).
 
