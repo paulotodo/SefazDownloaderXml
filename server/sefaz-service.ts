@@ -142,31 +142,78 @@ export class SefazService {
   private parseSOAPResponse(xmlResponse: string): SefazResponse {
     const parsed = this.parser.parse(xmlResponse);
 
-    // Navega pela estrutura SOAP
-    const envelope = parsed["soap12:Envelope"] || parsed["Envelope"];
-    const body = envelope?.["soap12:Body"] || envelope?.["Body"];
-    const response =
-      body?.["nfeDistDFeInteresseResponse"] ||
-      body?.["nfe:nfeDistDFeInteresseResponse"];
-    const result = response?.["nfeDistDFeInteresseResult"] || response?.["nfe:nfeDistDFeInteresseResult"];
+    // Log completo do parsed para debug
+    console.log('🔍 Estrutura parseada (top-level keys):', Object.keys(parsed));
+
+    // Navega pela estrutura SOAP - suporta múltiplos namespaces
+    const envelope = 
+      parsed["soap12:Envelope"] || 
+      parsed["soap:Envelope"] ||
+      parsed["Envelope"];
     
-    // Tenta encontrar retDistDFeInt em várias estruturas possíveis:
-    // 1. Resposta completa (produção): result.retDistDFeInt
-    // 2. Diretamente no body (simulação): body.retDistDFeInt
-    // 3. No root do parsed
+    if (!envelope) {
+      console.error('❌ Envelope não encontrado. Keys disponíveis:', Object.keys(parsed));
+      return { cStat: "", xMotivo: "Envelope SOAP não encontrado", docZips: [] };
+    }
+    
+    console.log('🔍 Envelope keys:', Object.keys(envelope));
+    
+    const body = 
+      envelope["soap12:Body"] || 
+      envelope["soap:Body"] ||
+      envelope["Body"];
+    
+    if (!body) {
+      console.error('❌ Body não encontrado. Keys disponíveis:', Object.keys(envelope));
+      return { cStat: "", xMotivo: "Body SOAP não encontrado", docZips: [] };
+    }
+    
+    console.log('🔍 Body keys:', Object.keys(body));
+    
+    const response =
+      body["nfeDistDFeInteresseResponse"] ||
+      body["nfe:nfeDistDFeInteresseResponse"];
+    
+    if (!response) {
+      console.error('❌ Response não encontrada. Keys disponíveis:', Object.keys(body));
+      return { cStat: "", xMotivo: "Response não encontrada", docZips: [] };
+    }
+    
+    console.log('🔍 Response keys:', Object.keys(response));
+    
+    const result = 
+      response["nfeDistDFeInteresseResult"] || 
+      response["nfe:nfeDistDFeInteresseResult"];
+    
+    if (!result) {
+      console.error('❌ Result não encontrado. Keys disponíveis:', Object.keys(response));
+      return { cStat: "", xMotivo: "Result não encontrado", docZips: [] };
+    }
+    
+    console.log('🔍 Result keys:', Object.keys(result));
+    
+    // Tenta encontrar retDistDFeInt em várias estruturas possíveis
     const retDistDFeInt = 
-      result?.["retDistDFeInt"] || 
-      body?.["retDistDFeInt"] ||
-      body?.["nfe:retDistDFeInt"] ||
+      result["retDistDFeInt"] || 
+      result["nfe:retDistDFeInt"] ||
+      body["retDistDFeInt"] ||
+      body["nfe:retDistDFeInt"] ||
       parsed["retDistDFeInt"];
 
-    const cStat = String(retDistDFeInt?.cStat || "");
-    const xMotivo = String(retDistDFeInt?.xMotivo || "");
-    const ultNSU = retDistDFeInt?.ultNSU;
-    const maxNSU = retDistDFeInt?.maxNSU;
+    if (!retDistDFeInt) {
+      console.error('❌ retDistDFeInt não encontrado. Keys disponíveis em result:', Object.keys(result));
+      return { cStat: "", xMotivo: "retDistDFeInt não encontrado", docZips: [] };
+    }
+    
+    console.log('🔍 retDistDFeInt keys:', Object.keys(retDistDFeInt));
+
+    const cStat = String(retDistDFeInt.cStat || "");
+    const xMotivo = String(retDistDFeInt.xMotivo || "");
+    const ultNSU = retDistDFeInt.ultNSU;
+    const maxNSU = retDistDFeInt.maxNSU;
 
     let docZips: Array<{ NSU: string; schema: string; content: string }> = [];
-    const lote = retDistDFeInt?.loteDistDFeInt;
+    const lote = retDistDFeInt.loteDistDFeInt;
 
     if (lote?.docZip) {
       const docs = Array.isArray(lote.docZip) ? lote.docZip : [lote.docZip];
@@ -328,7 +375,13 @@ export class SefazService {
         }
 
         // Log da resposta XML bruta para debug
-        console.log('📨 Resposta XML SEFAZ (primeiros 500 chars):', responseXml.substring(0, 500));
+        console.log('📨 Resposta XML SEFAZ (primeiros 1000 chars):', responseXml.substring(0, 1000));
+        
+        // Salvar XML completo em arquivo temporário para debug
+        const fs = require('fs');
+        const debugPath = '/tmp/sefaz-response-debug.xml';
+        fs.writeFileSync(debugPath, responseXml, 'utf-8');
+        console.log(`💾 XML completo salvo em: ${debugPath}`);
         
         const response = this.parseSOAPResponse(responseXml);
         
