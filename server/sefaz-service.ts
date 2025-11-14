@@ -46,6 +46,11 @@ export class SefazService {
     this.xmlDestPath = process.env.XML_DEST_PATH || "./xmls";
   }
 
+  /**
+   * Monta SOAP envelope usando consNSU (consulta por NSU específico)
+   * Usado apenas para compatibilidade com código legado
+   * ATENÇÃO: Preferir buildSOAPEnvelopeDistNSU para seguir NT 2014.002
+   */
   private buildSOAPEnvelope(cnpj: string, uf: string, ambiente: string, nsu: string): string {
     const cufAutor = UF_CODE_MAP[uf.toUpperCase()] || 35;
     const tpAmb = ambiente.toLowerCase().startsWith("prod") ? "1" : "2";
@@ -62,6 +67,43 @@ export class SefazService {
           <cUFAutor>${cufAutor}</cUFAutor>
           <CNPJ>${cnpj}</CNPJ>
           <consNSU><NSU>${nsu15}</NSU></consNSU>
+        </distDFeInt>
+      </nfe:nfeDadosMsg>
+    </nfe:nfeDistDFeInteresse>
+  </soap12:Body>
+</soap12:Envelope>`;
+  }
+
+  /**
+   * Monta SOAP envelope usando distNSU (distribuição por ultNSU)
+   * Conforme NT 2014.002 - Regra oficial da SEFAZ
+   * 
+   * IMPORTANTE: Este é o método correto para consultas NFeDistribuicaoDFe
+   * - Usa <distNSU><ultNSU> em vez de <consNSU><NSU>
+   * - Permite que SEFAZ retorne documentos após o ultNSU informado
+   * - Evita rejeição cStat=656 (uso indevido do serviço)
+   * 
+   * @param cnpj - CNPJ da empresa
+   * @param uf - UF de autorização (ex: 'SP', 'MG')
+   * @param ambiente - Ambiente ('producao' ou 'homologacao')
+   * @param ultNSU - Último NSU já consultado (use "0" apenas na primeira consulta)
+   */
+  private buildSOAPEnvelopeDistNSU(cnpj: string, uf: string, ambiente: string, ultNSU: string): string {
+    const cufAutor = UF_CODE_MAP[uf.toUpperCase()] || 35;
+    const tpAmb = ambiente.toLowerCase().startsWith("prod") ? "1" : "2";
+    const ultNSU15 = ultNSU.padStart(15, "0");
+
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"
+                 xmlns:nfe="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+  <soap12:Body>
+    <nfe:nfeDistDFeInteresse>
+      <nfe:nfeDadosMsg>
+        <distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+          <tpAmb>${tpAmb}</tpAmb>
+          <cUFAutor>${cufAutor}</cUFAutor>
+          <CNPJ>${cnpj}</CNPJ>
+          <distNSU><ultNSU>${ultNSU15}</ultNSU></distNSU>
         </distDFeInt>
       </nfe:nfeDadosMsg>
     </nfe:nfeDistDFeInteresse>
@@ -320,11 +362,15 @@ export class SefazService {
 
     let xmlsBaixados = 0;
     let nsuAtual = empresa.ultimoNSU;
-    let continuar = true;
+    let maxNSU = "0";
+    let alinhamentoCompleto = false;
+    const MAX_ITERACOES = 200; // Safety guard para sincronização
 
     try {
-      while (continuar) {
-        const envelope = this.buildSOAPEnvelope(empresa.cnpj, empresa.uf, empresa.ambiente, nsuAtual);
+      // Loop até atingir maxNSU conforme NT 2014.002
+      for (let iteracao = 0; iteracao < MAX_ITERACOES; iteracao++) {
+        // Usa distNSU conforme NT 2014.002 (não consNSU)
+        const envelope = this.buildSOAPEnvelopeDistNSU(empresa.cnpj, empresa.uf, empresa.ambiente, nsuAtual);
         
         let responseXml: string;
         try {
@@ -365,11 +411,12 @@ export class SefazService {
         const response = this.parseSOAPResponse(responseXml);
 
         if (response.cStat === "137") {
-          // 137: Nenhum documento localizado
-          continuar = false;
+          // 137: Nenhum documento localizado neste lote
+          // IMPORTANTE: Não para aqui! Continua até ultNSU === maxNSU
           nsuAtual = response.ultNSU || nsuAtual;
+          maxNSU = response.maxNSU || nsuAtual;
         } else if (response.cStat === "138") {
-          // 138: Tem documentos
+          // 138: Tem documentos - processa e salva
           for (const docZip of response.docZips || []) {
             if (docZip.schema.includes("nfeProc")) {
               try {
@@ -391,13 +438,42 @@ export class SefazService {
           }
 
           nsuAtual = response.ultNSU || nsuAtual;
-          
-          if (response.ultNSU === response.maxNSU) {
-            continuar = false;
-          }
+          maxNSU = response.maxNSU || nsuAtual;
         } else {
           throw new Error(`Erro SEFAZ: ${response.cStat} - ${response.xMotivo}`);
         }
+
+        // Verifica alinhamento completo (conforme NT 2014.002)
+        if (nsuAtual === maxNSU) {
+          alinhamentoCompleto = true;
+          console.log(`[Sincronização] Alinhamento completo: ultNSU === maxNSU (${nsuAtual})`);
+          break;
+        }
+
+        // Delay para evitar rate limiting (apenas se vai continuar)
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      // Verifica se o alinhamento foi completado
+      if (!alinhamentoCompleto) {
+        const mensagemErro = `Limite de segurança atingido (${MAX_ITERACOES} iterações) sem alcançar maxNSU. ultNSU=${nsuAtual}, maxNSU=${maxNSU}`;
+        
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId: sincronizacao.id,
+          nivel: "error",
+          mensagem: mensagemErro,
+          detalhes: JSON.stringify({ 
+            nsuInicial: empresa.ultimoNSU,
+            nsuAtual,
+            maxNSU,
+            xmlsBaixados,
+            observacao: "Backlog muito grande - considere aumentar MAX_ITERACOES ou executar reconciliação"
+          }),
+        });
+
+        throw new Error(mensagemErro);
       }
 
       // Atualiza empresa com novo NSU
@@ -479,144 +555,140 @@ export class SefazService {
   }
 
   /**
-   * Reconcilia o último NSU consultado usando busca binária
+   * Reconcilia o último NSU consultado seguindo NT 2014.002 da SEFAZ
    * 
-   * Descobre o último NSU já consumido por outras aplicações consultando a SEFAZ
-   * e atualizando a empresa com o NSU correto para evitar reprocessamento.
+   * Avança o ponteiro NSU sequencialmente até atingir maxNSU (alinhamento completo).
+   * IMPORTANTE: Segue regras da Nota Técnica 2014.002 para evitar cStat=656 (uso indevido).
    * 
-   * Algoritmo:
-   * 1. Consulta ultNSU (último NSU disponível na SEFAZ)
-   * 2. Se retornar vazio, assume que está alinhado (grava ultNSU)
-   * 3. Se retornar documentos, executa busca binária para encontrar o maior NSU já consumido
-   * 4. Limita a ~20 iterações para evitar custo excessivo
+   * Algoritmo conforme documentação SEFAZ:
+   * 1. Começa do ultimoNSU atual da empresa (NUNCA usa NSU=0 exceto primeira consulta)
+   * 2. Faz loop sequencial usando distNSU com ultNSU (não consNSU)
+   * 3. Continua até ultNSU === maxNSU (sincronização completa)
+   * 4. NÃO baixa XMLs (apenas avança ponteiro)
+   * 5. Atualiza banco apenas com valores retornados pela SEFAZ
    * 
    * @param empresa - Empresa a ser reconciliada
-   * @returns NSU descoberto e quantidade de chamadas realizadas
+   * @returns NSU final alinhado e quantidade de chamadas realizadas
    */
   async reconciliarUltimoNSU(empresa: Empresa): Promise<{
     nsuFinal: string;
     chamadas: number;
     intervalo: { min: string; max: string };
   }> {
+    const nsuInicial = empresa.ultimoNSU;
+    
     await storage.createLog({
       userId: empresa.userId,
       empresaId: empresa.id,
       sincronizacaoId: null,
       nivel: "info",
-      mensagem: `Iniciando reconciliação de NSU para ${empresa.razaoSocial}`,
-      detalhes: JSON.stringify({ cnpj: empresa.cnpj, nsuAtual: empresa.ultimoNSU }),
+      mensagem: `Iniciando alinhamento de NSU para ${empresa.razaoSocial}`,
+      detalhes: JSON.stringify({ 
+        cnpj: empresa.cnpj, 
+        nsuAtual: nsuInicial,
+        observacao: "Seguindo NT 2014.002 - loop sequencial até maxNSU"
+      }),
     });
 
     let chamadas = 0;
-    const MAX_ITERACOES = 20;
+    const MAX_ITERACOES = 100; // Safety guard: limite de segurança
 
     try {
-      // Passo 1: Consultar ultNSU (último disponível)
-      const envelope = this.buildSOAPEnvelope(
-        empresa.cnpj,
-        empresa.uf,
-        empresa.ambiente,
-        "0" // NSU 0 retorna o ultNSU
-      );
-      chamadas++;
+      let nsuAtual = nsuInicial;
+      let maxNSU = "0";
+      let alinhamentoCompleto = false;
 
-      const xmlResponse = await this.callDistDFe(empresa, envelope);
-      const response = this.parseSOAPResponse(xmlResponse);
-
-      if (response.cStat !== "137" && response.cStat !== "138") {
-        // 137 = Nenhum documento, 138 = Documentos encontrados
-        throw new Error(`SEFAZ retornou cStat ${response.cStat}: ${response.xMotivo}`);
-      }
-
-      const ultNSU = response.ultNSU || response.maxNSU || "0";
-      
-      // Se não há documentos no lote inicial, assume que está alinhado
-      if (!response.docZips || response.docZips.length === 0) {
-        await storage.updateEmpresa(empresa.id, { ultimoNSU: ultNSU }, empresa.userId);
-        
-        await storage.createLog({
-          userId: empresa.userId,
-          empresaId: empresa.id,
-          sincronizacaoId: null,
-          nivel: "info",
-          mensagem: `Reconciliação concluída: NSU alinhado`,
-          detalhes: JSON.stringify({ 
-            nsuFinal: ultNSU,
-            chamadas,
-            estrategia: "alinhado_automatico"
-          }),
-        });
-
-        return {
-          nsuFinal: ultNSU,
-          chamadas,
-          intervalo: { min: ultNSU, max: ultNSU },
-        };
-      }
-
-      // Passo 2: Busca binária para encontrar último NSU já consumido
-      let min = 0;
-      let max = parseInt(ultNSU);
-      let nsuEncontrado = 0;
-
-      for (let i = 0; i < MAX_ITERACOES && (max - min) > 1; i++) {
-        const meio = Math.floor((min + max) / 2);
-        const envelopeBusca = this.buildSOAPEnvelope(
+      // Loop sequencial seguindo regras da SEFAZ
+      // Continua até ultNSU === maxNSU (alinhamento completo)
+      for (let i = 0; i < MAX_ITERACOES; i++) {
+        // Monta envelope usando distNSU com ultNSU (conforme NT 2014.002)
+        const envelope = this.buildSOAPEnvelopeDistNSU(
           empresa.cnpj,
           empresa.uf,
           empresa.ambiente,
-          meio.toString()
+          nsuAtual
         );
         chamadas++;
 
-        try {
-          const xmlBusca = await this.callDistDFe(empresa, envelopeBusca);
-          const respBusca = this.parseSOAPResponse(xmlBusca);
+        const xmlResponse = await this.callDistDFe(empresa, envelope);
+        const response = this.parseSOAPResponse(xmlResponse);
 
-          if (respBusca.cStat === "138" && respBusca.docZips && respBusca.docZips.length > 0) {
-            // Há documentos neste NSU, avançar para frente
-            const maiorNSU = Math.max(
-              ...respBusca.docZips.map((d: { NSU: string }) => parseInt(d.NSU))
-            );
-            nsuEncontrado = Math.max(nsuEncontrado, maiorNSU);
-            min = meio;
-          } else {
-            // Sem documentos, retroceder
-            max = meio;
-          }
-        } catch (error) {
-          // Em caso de erro, considera que não há documentos e retrocede
-          console.warn(`Erro na iteração ${i} da busca binária:`, error);
-          max = meio;
+        // Valida resposta SEFAZ
+        if (response.cStat !== "137" && response.cStat !== "138") {
+          throw new Error(`SEFAZ retornou cStat ${response.cStat}: ${response.xMotivo}`);
+        }
+
+        const ultNSU = response.ultNSU || "0";
+        maxNSU = response.maxNSU || ultNSU;
+
+        // Log de progresso
+        console.log(`[Alinhamento NSU] Iteração ${i + 1}: ultNSU=${ultNSU}, maxNSU=${maxNSU}`);
+
+        // Atualiza nsuAtual com valor retornado pela SEFAZ (NUNCA valores arbitrários)
+        nsuAtual = ultNSU;
+
+        // Verifica se atingiu maxNSU (alinhamento completo)
+        if (ultNSU === maxNSU) {
+          alinhamentoCompleto = true;
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: null,
+            nivel: "info",
+            mensagem: `Alinhamento completo: ultNSU === maxNSU`,
+            detalhes: JSON.stringify({ ultNSU, maxNSU, iteracoes: i + 1, chamadas }),
+          });
+          break; // Sucesso: alinhamento completo
         }
 
         // Delay para evitar rate limiting
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      const nsuFinal = nsuEncontrado > 0 ? nsuEncontrado.toString() : ultNSU;
+      // Verifica se o alinhamento foi completado
+      if (!alinhamentoCompleto) {
+        const mensagemErro = `Limite de segurança atingido (${MAX_ITERACOES} iterações) sem alcançar maxNSU. ultNSU=${nsuAtual}, maxNSU=${maxNSU}`;
+        
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId: null,
+          nivel: "error",
+          mensagem: mensagemErro,
+          detalhes: JSON.stringify({ 
+            nsuInicial,
+            nsuAtual,
+            maxNSU,
+            chamadas,
+            observacao: "Intervenção manual necessária - backlog muito grande"
+          }),
+        });
 
-      // Atualizar empresa com NSU reconciliado
-      await storage.updateEmpresa(empresa.id, { ultimoNSU: nsuFinal }, empresa.userId);
+        throw new Error(mensagemErro);
+      }
+
+      // Atualiza empresa com NSU final alinhado
+      await storage.updateEmpresa(empresa.id, { ultimoNSU: nsuAtual }, empresa.userId);
 
       await storage.createLog({
         userId: empresa.userId,
         empresaId: empresa.id,
         sincronizacaoId: null,
         nivel: "info",
-        mensagem: `Reconciliação concluída via busca binária`,
+        mensagem: `Alinhamento concluído com sucesso (NT 2014.002)`,
         detalhes: JSON.stringify({ 
-          nsuFinal,
+          nsuInicial,
+          nsuFinal: nsuAtual,
+          maxNSU,
           chamadas,
-          intervalo: { min: min.toString(), max: max.toString() },
-          ultNSU
+          estrategia: "loop_sequencial_distNSU"
         }),
       });
 
       return {
-        nsuFinal,
+        nsuFinal: nsuAtual,
         chamadas,
-        intervalo: { min: min.toString(), max: max.toString() },
+        intervalo: { min: nsuInicial, max: nsuAtual },
       };
 
     } catch (error) {
@@ -625,7 +697,7 @@ export class SefazService {
         empresaId: empresa.id,
         sincronizacaoId: null,
         nivel: "error",
-        mensagem: `Erro na reconciliação de NSU: ${String(error)}`,
+        mensagem: `Erro no alinhamento de NSU: ${String(error)}`,
         detalhes: JSON.stringify({ error: String(error), chamadas }),
       });
 
