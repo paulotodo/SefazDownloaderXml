@@ -26,6 +26,7 @@ export const empresas = pgTable("empresas", {
   certificadoSenha: text("certificado_senha").notNull(), // senha do certificado (criptografada)
   ativo: boolean("ativo").notNull().default(true),
   ultimoNSU: text("ultimo_nsu").notNull().default("000000000000000"),
+  bloqueadoAte: timestamp("bloqueado_ate"), // Bloqueio temporário SEFAZ (cStat 656) até este timestamp
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -42,6 +43,7 @@ export const insertEmpresaSchema = createInsertSchema(empresas, {
   createdAt: true,
   updatedAt: true,
   ultimoNSU: true,
+  bloqueadoAte: true, // Gerenciado automaticamente pelo sistema
 });
 
 export type InsertEmpresa = z.infer<typeof insertEmpresaSchema>;

@@ -25,6 +25,7 @@ function parseEmpresa(raw: any): Empresa {
     certificadoSenha: raw.certificado_senha,
     ativo: raw.ativo,
     ultimoNSU: raw.ultimo_nsu,
+    bloqueadoAte: raw.bloqueado_ate ? new Date(raw.bloqueado_ate) : null,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
   };
@@ -163,6 +164,7 @@ export class SupabaseStorage implements IStorage {
     if (updates.certificadoSenha !== undefined) updateData.certificado_senha = updates.certificadoSenha;
     if (updates.ativo !== undefined) updateData.ativo = updates.ativo;
     if (updates.ultimoNSU !== undefined) updateData.ultimo_nsu = updates.ultimoNSU;
+    if (updates.bloqueadoAte !== undefined) updateData.bloqueado_ate = updates.bloqueadoAte;
 
     let query = supabaseAdmin.from("empresas").update(updateData).eq("id", id);
     
