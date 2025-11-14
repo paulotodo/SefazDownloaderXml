@@ -46,3 +46,72 @@ The application uses a modern full-stack approach:
 -   **multer**: For handling multipart form data, specifically certificate uploads.
 -   **node-forge**: Used for parsing and validating PKCS12 digital certificates, especially legacy formats.
 -   **Let's Encrypt**: For automated SSL certificate provisioning via Certbot.
+
+## Recent Changes
+
+### ✅ Adequação à NT 2014.002 da SEFAZ (14/11/2025) - CRITICAL
+**Objetivo:** Adequar todas as consultas à SEFAZ conforme Nota Técnica 2014.002 para evitar rejeição cStat=656 (uso indevido do serviço).
+
+**Mudanças implementadas:**
+
+#### 1. Novo método `buildSOAPEnvelopeDistNSU` (`server/sefaz-service.ts`)
+- **ANTES**: Usava `<consNSU><NSU>` (método legado incompatível com NT 2014.002)
+- **AGORA**: Usa `<distNSU><ultNSU>` (método oficial conforme documentação SEFAZ)
+- **Benefício**: Evita rejeição cStat=656 e segue 100% as regras oficiais
+
+#### 2. Reconciliação de NSU reformulada
+- **ANTES**: Busca binária com NSUs arbitrários (violava NT 2014.002)
+- **AGORA**: Loop sequencial usando APENAS valores retornados pela SEFAZ
+- **Algoritmo NT 2014.002:**
+  - Começa do `ultimoNSU` atual da empresa (NUNCA NSU=0 exceto primeira consulta)
+  - Loop até `ultNSU === maxNSU` (alinhamento completo obrigatório)
+  - NÃO baixa XMLs (apenas avança ponteiro NSU)
+  - Safety guard: 100 iterações máximas
+  - Lança erro se não completar alinhamento
+  - Delay de 500ms entre chamadas (rate limiting)
+  - Logs detalhados de progresso e conclusão
+
+#### 3. Sincronização normal atualizada
+- **ANTES**: Usava `buildSOAPEnvelope` (consNSU) e parava em cStat=137
+- **AGORA**: 
+  - Usa `buildSOAPEnvelopeDistNSU` (distNSU com ultNSU)
+  - Loop até `ultNSU === maxNSU` mesmo em cStat=137
+  - Safety guard: 200 iterações máximas
+  - Só persiste NSU quando alinhamento completo
+  - Delay de 300ms entre chamadas
+- **Benefício**: Elimina desalinhamento de NSU em backlogs grandes
+
+#### 4. Empresas novas
+- `ultimoNSU` inicia em "000000000000000" (15 zeros)
+- Primeira consulta usa ultNSU=0 (permitido pela SEFAZ uma única vez)
+- Após primeira resposta, NUNCA mais usa NSU=0
+- Sempre usa valores retornados pela SEFAZ (nunca valores arbitrários)
+
+**Regras da NT 2014.002 implementadas:**
+- ✅ Sempre enviar ultNSU do último consultado
+- ✅ Usar `<distNSU><ultNSU>` (não consNSU)
+- ✅ Nunca fabricar NSUs arbitrários
+- ✅ Avançar sequencialmente apenas com valores da SEFAZ
+- ✅ Garantir ultNSU === maxNSU antes de persistir
+- ✅ Evitar rejeição cStat=656 (uso indevido)
+
+**Fontes da documentação:**
+- [NT 2014.002 - Portal Nacional NF-e](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=wLVBlKchUb4%3D)
+- [Tecnospeed: Regras de sincronização](https://atendimento.tecnospeed.com.br/hc/pt-br/articles/10794811536791)
+- [NetCPA: Atualização das regras de uso indevido](https://netcpa.com.br/colunas/nf-e-04032022-atualizacao-das-regras-de-uso-indevido-do-web-service-nfedistribuicaodfe-nt-2014002/13214)
+- [OOBJ: O que é NSU](https://oobj.com.br/bc/nsu-o-que-e/)
+- [MOC SPED/PR: Documentação técnica](https://moc.sped.fazenda.pr.gov.br/NFeDistribuicaoDFe.html)
+
+**Benefícios:**
+- ✅ Evita rejeição cStat=656 (uso indevido do serviço)
+- ✅ Conformidade 100% com NT 2014.002
+- ✅ Alinhamento completo do NSU garantido
+- ✅ Logs detalhados para auditoria e troubleshooting
+- ✅ Safety guards para backlogs muito grandes
+- ✅ Sistema production-ready conforme regras oficiais
+
+**Interface de usuário (reconciliação manual):**
+- **API**: Endpoint `POST /api/empresas/:id/reconciliar-nsu` protegido
+- **Frontend**: Botão com ícone RefreshCw ao lado de "Sincronizar"
+- **UX**: Apenas 1 reconciliação por vez (previne concorrência)
+- **Toast**: Feedback com NSU atualizado e quantidade de consultas
