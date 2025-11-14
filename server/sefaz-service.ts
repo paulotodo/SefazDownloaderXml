@@ -327,7 +327,19 @@ export class SefazService {
           }
         }
 
+        // Log da resposta XML bruta para debug
+        console.log('📨 Resposta XML SEFAZ (primeiros 500 chars):', responseXml.substring(0, 500));
+        
         const response = this.parseSOAPResponse(responseXml);
+        
+        // Log detalhado da resposta parseada
+        console.log('📊 Resposta SEFAZ parseada:', JSON.stringify({
+          cStat: response.cStat,
+          xMotivo: response.xMotivo,
+          ultNSU: response.ultNSU,
+          maxNSU: response.maxNSU,
+          docZipsCount: response.docZips?.length || 0
+        }, null, 2));
 
         if (response.cStat === "137") {
           // 137: Nenhum documento localizado
