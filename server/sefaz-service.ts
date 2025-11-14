@@ -469,10 +469,34 @@ export class SefazService {
         });
 
         if (response.cStat === "137") {
-          // 137: Nenhum documento localizado neste lote
-          // IMPORTANTE: Não para aqui! Continua até ultNSU === maxNSU
+          // 137: Nenhum documento localizado
+          // NT 2014.002 §3.11.4: AGUARDAR 1 HORA antes de nova consulta
           nsuAtual = response.ultNSU || nsuAtual;
           maxNSU = response.maxNSU || nsuAtual;
+          
+          // PERSISTIR bloqueio de 1h conforme NT 2014.002
+          const bloqueadoAte = criarBloqueio(60);
+          await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+          
+          const proximaConsultaHorarioBrasil = formatarDataBrasilCompleta(bloqueadoAte);
+          
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: sincronizacao.id,
+            nivel: "info",
+            mensagem: `cStat=137: Sem documentos. NT 2014.002 exige aguardar 1h`,
+            detalhes: JSON.stringify({ 
+              ultNSU: nsuAtual,
+              maxNSU,
+              bloqueadoAte: bloqueadoAte.toISOString(),
+              proximaConsultaHorarioBrasil,
+              observacao: "Empresa bloqueada até " + proximaConsultaHorarioBrasil
+            }),
+          });
+          
+          alinhamentoCompleto = true; // Marca como completo para sair do loop
+          break; // Para o loop IMEDIATAMENTE
         } else if (response.cStat === "138") {
           // 138: Tem documentos - processa e salva
           for (const docZip of response.docZips || []) {
@@ -798,26 +822,79 @@ export class SefazService {
         });
 
         // Valida resposta SEFAZ
-        if (response.cStat !== "137" && response.cStat !== "138") {
-          // Erro 656: Bloqueio temporário - mensagem mais clara
+        if (response.cStat === "137") {
+          // 137: Sem documentos - NT 2014.002 exige aguardar 1h
+          const ultNSU = response.ultNSU || "0";
+          maxNSU = response.maxNSU || ultNSU;
+          
+          // PERSISTIR bloqueio de 1h conforme NT 2014.002
+          const bloqueadoAte = criarBloqueio(60);
+          await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+          
+          const proximaConsultaHorarioBrasil = formatarDataBrasilCompleta(bloqueadoAte);
+          
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: null,
+            nivel: "info",
+            mensagem: `cStat=137 na reconciliação: Sem documentos. NT 2014.002 exige aguardar 1h`,
+            detalhes: JSON.stringify({ 
+              ultNSU,
+              maxNSU,
+              bloqueadoAte: bloqueadoAte.toISOString(),
+              proximaConsultaHorarioBrasil,
+              observacao: "Empresa bloqueada até " + proximaConsultaHorarioBrasil
+            }),
+          });
+          
+          // Atualiza NSU atual e para o loop IMEDIATAMENTE
+          nsuAtual = ultNSU;
+          alinhamentoCompleto = true;
+          break;
+        } else if (response.cStat === "138") {
+          // 138: Documentos encontrados - avança NSU
+          const ultNSU = response.ultNSU || "0";
+          maxNSU = response.maxNSU || ultNSU;
+          nsuAtual = ultNSU;
+        } else {
+          // Erro 656 ou outro erro
           if (response.cStat === "656") {
-            const mensagemClara = `Bloqueio temporário da SEFAZ (cStat 656): ${response.xMotivo}. Aguarde 1 hora antes de tentar novamente. Isso ocorre quando há múltiplas tentativas com NSU inválido.`;
+            const bloqueadoAte = criarBloqueio(61);
+            
+            await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+            
+            const horarioBrasilBloqueio = formatarDataBrasilCompleta(bloqueadoAte);
+            
+            await storage.createLog({
+              userId: empresa.userId,
+              empresaId: empresa.id,
+              sincronizacaoId: null,
+              nivel: "error",
+              mensagem: `Erro 656 - Bloqueio SEFAZ ativado durante reconciliação`,
+              detalhes: JSON.stringify({ 
+                iteracao: i + 1,
+                ultNSUEnviado: nsuAtual,
+                cStat: "656",
+                xMotivo: response.xMotivo,
+                bloqueadoAte: bloqueadoAte.toISOString(),
+                bloqueadoAteHorarioBrasil: horarioBrasilBloqueio,
+                diagnostico: "NSU fora de sequência ou consulta prematura detectada pela SEFAZ",
+                solucao: `Sistema bloqueado até ${horarioBrasilBloqueio}. Após desbloqueio, use 'Alinhar NSU' para sincronizar corretamente.`
+              }),
+            });
+
+            const mensagemClara = `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. Empresa bloqueada até ${horarioBrasilBloqueio}. Aguarde o desbloqueio automático.`;
             throw new Error(mensagemClara);
           }
           throw new Error(`SEFAZ retornou cStat ${response.cStat}: ${response.xMotivo}`);
         }
 
-        const ultNSU = response.ultNSU || "0";
-        maxNSU = response.maxNSU || ultNSU;
-
         // Log de progresso
-        console.log(`[Alinhamento NSU] Iteração ${i + 1}: ultNSU=${ultNSU}, maxNSU=${maxNSU}`);
-
-        // Atualiza nsuAtual com valor retornado pela SEFAZ (NUNCA valores arbitrários)
-        nsuAtual = ultNSU;
+        console.log(`[Alinhamento NSU] Iteração ${i + 1}: ultNSU=${nsuAtual}, maxNSU=${maxNSU}`);
 
         // Verifica se atingiu maxNSU (alinhamento completo)
-        if (ultNSU === maxNSU) {
+        if (nsuAtual === maxNSU) {
           alinhamentoCompleto = true;
           await storage.createLog({
             userId: empresa.userId,
@@ -825,7 +902,7 @@ export class SefazService {
             sincronizacaoId: null,
             nivel: "info",
             mensagem: `Alinhamento completo: ultNSU === maxNSU`,
-            detalhes: JSON.stringify({ ultNSU, maxNSU, iteracoes: i + 1, chamadas }),
+            detalhes: JSON.stringify({ ultNSU: nsuAtual, maxNSU, iteracoes: i + 1, chamadas }),
           });
           break; // Sucesso: alinhamento completo
         }

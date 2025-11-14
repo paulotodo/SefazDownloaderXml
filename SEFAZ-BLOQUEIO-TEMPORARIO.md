@@ -1,58 +1,61 @@
-# Bloqueio Temporário SEFAZ (cStat 656)
+# 🔒 Bloqueio Temporário SEFAZ (cStat 656) - Solução Definitiva
 
-## O que é?
+## 📋 O que é o erro 656?
 
-Quando a SEFAZ detecta **consumo indevido** do serviço NFeDistribuicaoDFe, ela aplica um bloqueio temporário de **1 hora** para o CNPJ.
+O erro **656 - Consumo Indevido** da SEFAZ acontece quando o sistema viola as regras da **Nota Técnica 2014.002 §3.11.4**, especificamente:
 
-## Sistema de Bloqueio Automático (✨ NOVO)
+### 🚨 Causas (NT 2014.002):
 
-Quando o erro 656 é detectado, o sistema automaticamente:
+1. **NSU Fora de Sequência** ⚠️ **CAUSA MAIS COMUM**
+   - Enviou `ultNSU` diferente do retornado pela SEFAZ na consulta anterior
+   - Tentou "resetar" NSU para zero em CNPJ que já teve consultas anteriores
+   - **Mensagem:** "Deve ser utilizado o ultNSU nas solicitacoes subsequentes"
+   - **Solução aplicada**: Sistema usa APENAS valores retornados pela SEFAZ ✅
 
-1. **Salva timestamp de bloqueio**: Campo `bloqueadoAte` na empresa é preenchido com data/hora de desbloqueio (now + 61 minutos com margem de segurança)
-2. **Bloqueia novas tentativas**: Sincronizações (manual e automática) são impedidas até o desbloqueio, evitando loop infinito
-3. **Desbloqueio automático**: Campo é limpo automaticamente após primeira sincronização bem-sucedida
-4. **Feedback claro**: Interface mostra tempo restante e mensagem explicativa
-5. **Logs detalhados**: Registra bloqueio, tentativas bloqueadas e desbloqueio
+2. **Consultas Repetidas sem Aguardar 1h**
+   - Recebeu `cStat=137` (sem documentos) e consultou novamente antes de 1 hora
+   - **Mensagem:** "Deve ser aguardado 1 hora para efetuar nova solicitação"
+   - **Solução aplicada**: Bloqueio automático de 1h após receber cStat=137 ✅
 
-## Quando acontece?
+### ✅ **CORREÇÃO CRÍTICA APLICADA (14/11/2025):**
 
-O erro `cStat=656: Rejeição: Consumo Indevido` ocorre quando:
+O sistema tinha um **bug grave** que violava a NT 2014.002:
+- **Antes**: Botão "Resetar NSU" colocava `ultNSU=0` em CNPJs com histórico
+- **Resultado**: Erro 656 imediato (NT 2014.002 permite NSU=0 apenas na primeira consulta real)
+- **Agora**: Botão removido, sistema usa APENAS valores retornados pela SEFAZ ✅
 
-1. **Múltiplas tentativas com NSU inválido**
-   - Tentar consultar com `ultNSU=0` quando a empresa já foi consultada antes
-   - Enviar NSU que não segue a sequência retornada pela SEFAZ
+## 🎯 Como Usar o Sistema CORRETAMENTE
 
-2. **Violação da NT 2014.002**
-   - Usar `<consNSU><NSU>` ao invés de `<distNSU><ultNSU>`
-   - Não usar o `ultNSU` retornado pela SEFAZ nas consultas subsequentes
-   - Fabricar valores de NSU arbitrários (deve usar apenas valores retornados pela SEFAZ)
+### ✅ **Empresas Novas (NSU=0):**
+1. Cadastre a empresa com certificado
+2. Clique **"Sincronizar"** (▶️ Play)
+3. Sistema busca todos os XMLs disponíveis
+4. NSU atualizado automaticamente
 
-## Mensagem de erro completa
+### ✅ **Empresas com NSU Desatualizado:**
+1. Clique **"Alinhar NSU"** (🔄 RefreshCw)  
+   - Avança NSU sequencialmente sem baixar XMLs
+   - Rápido para backlogs grandes
+2. Depois clique **"Sincronizar"** (▶️ Play)
+   - Baixa XMLs faltantes
 
-```
-Rejeição: Consumo Indevido (Deve ser utilizado o ultNSU nas solicitações subsequentes. Tente após 1 hora)
-```
+### ✅ **Se Receber Erro 656:**
+1. ⏰ **Aguarde 1 hora** (bloqueio automático)
+2. Sistema mostra: "Bloqueado até [horário do Brasil]"
+3. Após desbloqueio automático, use **"Alinhar NSU"**
+4. Se persistir: **verifique se há outro sistema** consultando
 
-## O que fazer?
+---
 
-### ✅ Solução imediata
-**Aguarde 1 hora** antes de tentar qualquer operação (sincronização ou alinhamento de NSU) para esta empresa.
+## 📊 Entendendo os Botões
 
-### ✅ Prevenção
+| Botão | Ícone | Quando Usar | O que Faz |
+|-------|-------|-------------|-----------|
+| **Alinhar NSU** | 🔄 | NSU desatualizado | Avança NSU sem baixar XMLs (rápido) |
+| **Sincronizar** | ▶️ | Buscar XMLs novos | Baixa XMLs e atualiza NSU |
+| **Excluir** | 🗑️ | Remover empresa | Deleta empresa e XMLs |
 
-1. **Empresas novas (NSU=0):**
-   - Use APENAS "Sincronizar" (botão ▶️ Play)
-   - NUNCA use "Alinhar NSU" em empresas novas
-   - O botão "Alinhar NSU" fica oculto automaticamente
-
-2. **Empresas existentes:**
-   - "Sincronizar": Baixa XMLs e atualiza NSU
-   - "Alinhar NSU": Apenas avança o ponteiro NSU sem baixar (útil para backlogs grandes)
-
-3. **Regras gerais:**
-   - Nunca tentar sincronizar várias vezes em sequência rápida
-   - Respeitar o delay entre consultas (300-500ms)
-   - Sempre usar os valores de NSU retornados pela SEFAZ
+**Nota:** "Alinhar NSU" só aparece para empresas que já sincronizaram (NSU ≠ 0)
 
 ## Logs de diagnóstico
 
@@ -92,8 +95,11 @@ Detalhes: {"iteracao":1,"ultNSUEnviado":"000000000000000","error":"...","stack":
 
 ✅ **Correções implementadas:**
 - ✨ **Bloqueio automático de 61 minutos após erro 656** (evita loop infinito)
+- ✨ **Bloqueio automático de 60 minutos após cStat=137** (conforme NT 2014.002 §3.11.4)
 - ✨ **Verificação de bloqueio antes de sincronizar** (manual e automático)
 - ✨ **Desbloqueio automático** após sincronização bem-sucedida
+- ✨ **Loop para imediatamente** ao receber cStat=137 (não faz mais consultas)
+- ✨ **Funcionalidade "Resetar NSU" removida** (causava erro 656)
 - Validação que bloqueia reconciliação de empresas com NSU=0
 - Frontend oculta botão "Alinhar NSU" para empresas novas
 - Uso correto de `<distNSU><ultNSU>` conforme NT 2014.002
@@ -104,6 +110,7 @@ Detalhes: {"iteracao":1,"ultNSUEnviado":"000000000000000","error":"...","stack":
 ✅ **Proteções ativas:**
 - ⏱️ **Bloqueio persistente**: Armazenado em `empresas.bloqueadoAte`
 - 🔒 **Bloqueio respeitado**: Cron e endpoints manuais verificam bloqueio
+- 🛑 **cStat=137 para o loop**: Sistema NÃO faz mais consultas após receber 137
 - Safety guards: 100 iterações (reconciliação), 200 iterações (sincronização)
 - Delay entre consultas: 300-500ms
 - Alinhamento completo garantido (ultNSU === maxNSU)

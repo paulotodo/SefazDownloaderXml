@@ -49,6 +49,47 @@ The application uses a modern full-stack approach:
 
 ## Recent Changes
 
+### ✅ CORREÇÃO CRÍTICA COMPLETA: NT 2014.002 §3.11.4 (14/11/2025 23:45) - CRITICAL FIX
+**Problema Identificado pelo Architect (2 violações críticas):**
+
+**1. Reset NSU para zero (RESOLVIDO):**
+- Botão "Resetar NSU" causava erro 656 imediato ao colocar `ultNSU=0` em CNPJs com histórico
+- NT 2014.002 permite `ultNSU=0` APENAS para CNPJs nunca consultados antes
+- SEFAZ rejeita tentativa de voltar para NSU=0 com: "Deve ser utilizado o ultNSU nas solicitacoes subsequentes"
+
+**2. Loop infinito após cStat=137 (RESOLVIDO):**
+- Sistema continuava fazendo consultas após receber cStat=137 (sem documentos)
+- NT 2014.002 §3.11.4: "Deve ser aguardado 1 hora para efetuar nova solicitação"
+- Loop ignorava regra de 1h e continuava martelando SEFAZ (causava erro 656)
+
+**Solução Completa Implementada:**
+
+**A. Remoção do Reset NSU:**
+1. Removido endpoint `POST /api/empresas/:id/resetar-nsu`
+2. Removido botão ⤾ "Resetar NSU" da interface
+3. Sistema usa APENAS valores retornados pela SEFAZ
+
+**B. Bloqueio Automático após cStat=137:**
+1. **Loop para IMEDIATAMENTE** ao receber cStat=137
+2. **Persiste bloqueio** de 60min em `empresas.bloqueadoAte`
+3. **Impede consultas** até desbloqueio automático
+4. **Logs detalhados** com timestamp de próxima consulta permitida
+5. Aplica tanto em `sincronizarEmpresa` quanto em `reconciliarUltimoNSU`
+
+**Funcionalidade Correta:**
+- **"Alinhar NSU"** (🔄): Para empresas com NSU desatualizado
+- **"Sincronizar"** (▶️): Para empresas novas ou para baixar XMLs
+- **Bloqueio automático**: 60min após cStat=137, 61min após cStat=656
+
+**Arquivos modificados:**
+- `server/routes.ts`: Endpoint resetar-nsu removido
+- `client/src/pages/empresas.tsx`: Botão resetar-nsu removido
+- `server/sefaz-service.ts`: Bloqueio automático após cStat=137
+- `SEFAZ-BLOQUEIO-TEMPORARIO.md`: Documentação completa
+- `replit.md`: Esta seção de correção
+
+---
+
 ### ✅ Sistema de Bloqueio Automático para erro 656 (14/11/2025) - CRITICAL FIX
 **Objetivo:** Evitar loop infinito de bloqueios quando SEFAZ retorna cStat=656 (consumo indevido).
 

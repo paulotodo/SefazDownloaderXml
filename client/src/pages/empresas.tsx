@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Building2, Plus, Pencil, Trash2, Search, Play, RefreshCw, RotateCcw } from "lucide-react";
+import { Building2, Plus, Pencil, Trash2, Search, Play, RefreshCw } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -113,29 +113,6 @@ export default function Empresas() {
     },
   });
 
-  const resetarNSUMutation = useMutation({
-    mutationFn: (id: string) => 
-      apiRequest<{
-        success: boolean;
-        nsuAnterior: string;
-        nsuNovo: string;
-        message: string;
-      }>(`/api/empresas/${id}/resetar-nsu`, { method: "POST" }),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/empresas"] });
-      toast({
-        title: "NSU resetado com sucesso",
-        description: `NSU ${data.nsuAnterior} → ${data.nsuNovo}. Agora você pode sincronizar normalmente.`,
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Erro ao resetar NSU",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
 
   const filteredEmpresas = empresas?.filter((empresa) =>
     empresa.razaoSocial.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -258,60 +235,20 @@ export default function Empresas() {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           {empresa.ultimoNSU !== "000000000000000" && empresa.ultimoNSU !== "0" && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => {
-                                  // Bloqueia múltiplas reconciliações simultâneas
-                                  if (reconcilandoId !== null) return;
-                                  reconciliarNSUMutation.mutate(empresa.id);
-                                }}
-                                disabled={reconcilandoId !== null}
-                                title="Alinhar NSU sem baixar XMLs (avança rapidamente)"
-                                data-testid={`button-reconciliar-${empresa.id}`}
-                              >
-                                <RefreshCw className={`w-4 h-4 ${reconcilandoId === empresa.id ? 'animate-spin' : ''}`} />
-                              </Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Resetar NSU para resolver conflitos com SEFAZ"
-                                    data-testid={`button-resetar-nsu-${empresa.id}`}
-                                  >
-                                    <RotateCcw className="w-4 h-4" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Resetar NSU?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Isso vai resetar o NSU da empresa <strong>{empresa.razaoSocial}</strong> para 0 (zero).
-                                      <br /><br />
-                                      <strong>Use isso apenas se:</strong>
-                                      <ul className="list-disc pl-6 mt-2 space-y-1">
-                                        <li>Recebeu erro 656 (Consumo Indevido) repetidamente</li>
-                                        <li>O NSU está desatualizado e não consegue alinhar</li>
-                                        <li>A SEFAZ rejeita com "Deve ser utilizado o ultNSU"</li>
-                                      </ul>
-                                      <br />
-                                      Após resetar, você poderá sincronizar normalmente do zero.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => resetarNSUMutation.mutate(empresa.id)}
-                                      className="bg-warning text-warning-foreground hover:bg-warning/90"
-                                    >
-                                      Resetar NSU
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                // Bloqueia múltiplas reconciliações simultâneas
+                                if (reconcilandoId !== null) return;
+                                reconciliarNSUMutation.mutate(empresa.id);
+                              }}
+                              disabled={reconcilandoId !== null}
+                              title="Alinhar NSU sem baixar XMLs (avança rapidamente)"
+                              data-testid={`button-reconciliar-${empresa.id}`}
+                            >
+                              <RefreshCw className={`w-4 h-4 ${reconcilandoId === empresa.id ? 'animate-spin' : ''}`} />
+                            </Button>
                           )}
                           <Button
                             variant="ghost"
