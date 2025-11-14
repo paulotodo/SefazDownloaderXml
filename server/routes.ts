@@ -307,6 +307,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/empresas/:id/reconciliar-nsu", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const empresa = await storage.getEmpresa(req.params.id, userId);
+      
+      if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+      }
+
+      // Executa reconciliação
+      const resultado = await sefazService.reconciliarUltimoNSU(empresa);
+      
+      res.json({
+        success: true,
+        nsuAnterior: empresa.ultimoNSU,
+        nsuAtual: resultado.nsuFinal,
+        chamadas: resultado.chamadas,
+        intervalo: resultado.intervalo,
+      });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== XMLs ========== (protegidos)
   app.get("/api/xmls", authenticateUser, async (req, res) => {
     const userId = req.user!.id;

@@ -477,6 +477,161 @@ export class SefazService {
       detalhes: null,
     });
   }
+
+  /**
+   * Reconcilia o último NSU consultado usando busca binária
+   * 
+   * Descobre o último NSU já consumido por outras aplicações consultando a SEFAZ
+   * e atualizando a empresa com o NSU correto para evitar reprocessamento.
+   * 
+   * Algoritmo:
+   * 1. Consulta ultNSU (último NSU disponível na SEFAZ)
+   * 2. Se retornar vazio, assume que está alinhado (grava ultNSU)
+   * 3. Se retornar documentos, executa busca binária para encontrar o maior NSU já consumido
+   * 4. Limita a ~20 iterações para evitar custo excessivo
+   * 
+   * @param empresa - Empresa a ser reconciliada
+   * @returns NSU descoberto e quantidade de chamadas realizadas
+   */
+  async reconciliarUltimoNSU(empresa: Empresa): Promise<{
+    nsuFinal: string;
+    chamadas: number;
+    intervalo: { min: string; max: string };
+  }> {
+    await storage.createLog({
+      userId: empresa.userId,
+      empresaId: empresa.id,
+      sincronizacaoId: null,
+      nivel: "info",
+      mensagem: `Iniciando reconciliação de NSU para ${empresa.razaoSocial}`,
+      detalhes: JSON.stringify({ cnpj: empresa.cnpj, nsuAtual: empresa.ultimoNSU }),
+    });
+
+    let chamadas = 0;
+    const MAX_ITERACOES = 20;
+
+    try {
+      // Passo 1: Consultar ultNSU (último disponível)
+      const envelope = this.buildSOAPEnvelope(
+        empresa.cnpj,
+        empresa.uf,
+        empresa.ambiente,
+        "0" // NSU 0 retorna o ultNSU
+      );
+      chamadas++;
+
+      const xmlResponse = await this.callDistDFe(empresa, envelope);
+      const response = this.parseSOAPResponse(xmlResponse);
+
+      if (response.cStat !== "137" && response.cStat !== "138") {
+        // 137 = Nenhum documento, 138 = Documentos encontrados
+        throw new Error(`SEFAZ retornou cStat ${response.cStat}: ${response.xMotivo}`);
+      }
+
+      const ultNSU = response.ultNSU || response.maxNSU || "0";
+      
+      // Se não há documentos no lote inicial, assume que está alinhado
+      if (!response.docZips || response.docZips.length === 0) {
+        await storage.updateEmpresa(empresa.id, { ultimoNSU: ultNSU }, empresa.userId);
+        
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId: null,
+          nivel: "info",
+          mensagem: `Reconciliação concluída: NSU alinhado`,
+          detalhes: JSON.stringify({ 
+            nsuFinal: ultNSU,
+            chamadas,
+            estrategia: "alinhado_automatico"
+          }),
+        });
+
+        return {
+          nsuFinal: ultNSU,
+          chamadas,
+          intervalo: { min: ultNSU, max: ultNSU },
+        };
+      }
+
+      // Passo 2: Busca binária para encontrar último NSU já consumido
+      let min = 0;
+      let max = parseInt(ultNSU);
+      let nsuEncontrado = 0;
+
+      for (let i = 0; i < MAX_ITERACOES && (max - min) > 1; i++) {
+        const meio = Math.floor((min + max) / 2);
+        const envelopeBusca = this.buildSOAPEnvelope(
+          empresa.cnpj,
+          empresa.uf,
+          empresa.ambiente,
+          meio.toString()
+        );
+        chamadas++;
+
+        try {
+          const xmlBusca = await this.callDistDFe(empresa, envelopeBusca);
+          const respBusca = this.parseSOAPResponse(xmlBusca);
+
+          if (respBusca.cStat === "138" && respBusca.docZips && respBusca.docZips.length > 0) {
+            // Há documentos neste NSU, avançar para frente
+            const maiorNSU = Math.max(
+              ...respBusca.docZips.map((d: { NSU: string }) => parseInt(d.NSU))
+            );
+            nsuEncontrado = Math.max(nsuEncontrado, maiorNSU);
+            min = meio;
+          } else {
+            // Sem documentos, retroceder
+            max = meio;
+          }
+        } catch (error) {
+          // Em caso de erro, considera que não há documentos e retrocede
+          console.warn(`Erro na iteração ${i} da busca binária:`, error);
+          max = meio;
+        }
+
+        // Delay para evitar rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      const nsuFinal = nsuEncontrado > 0 ? nsuEncontrado.toString() : ultNSU;
+
+      // Atualizar empresa com NSU reconciliado
+      await storage.updateEmpresa(empresa.id, { ultimoNSU: nsuFinal }, empresa.userId);
+
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        sincronizacaoId: null,
+        nivel: "info",
+        mensagem: `Reconciliação concluída via busca binária`,
+        detalhes: JSON.stringify({ 
+          nsuFinal,
+          chamadas,
+          intervalo: { min: min.toString(), max: max.toString() },
+          ultNSU
+        }),
+      });
+
+      return {
+        nsuFinal,
+        chamadas,
+        intervalo: { min: min.toString(), max: max.toString() },
+      };
+
+    } catch (error) {
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        sincronizacaoId: null,
+        nivel: "error",
+        mensagem: `Erro na reconciliação de NSU: ${String(error)}`,
+        detalhes: JSON.stringify({ error: String(error), chamadas }),
+      });
+
+      throw error;
+    }
+  }
 }
 
 export const sefazService = new SefazService();
