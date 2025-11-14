@@ -577,6 +577,27 @@ export class SefazService {
   }> {
     const nsuInicial = empresa.ultimoNSU;
     
+    // VALIDAÇÃO CRÍTICA: Não permitir reconciliação de empresas novas (NSU=0)
+    // A SEFAZ rejeita com cStat=656 se tentar usar ultNSU=0 em empresa que já consultou antes
+    if (nsuInicial === "000000000000000" || nsuInicial === "0") {
+      const mensagemErro = "Reconciliação não disponível para empresas sem NSU configurado. Use 'Sincronizar' primeiro para inicializar o NSU.";
+      
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        sincronizacaoId: null,
+        nivel: "warning",
+        mensagem: mensagemErro,
+        detalhes: JSON.stringify({ 
+          cnpj: empresa.cnpj,
+          ultimoNSU: nsuInicial,
+          observacao: "Para empresas novas, execute Sincronização normal primeiro"
+        }),
+      });
+
+      throw new Error(mensagemErro);
+    }
+    
     await storage.createLog({
       userId: empresa.userId,
       empresaId: empresa.id,

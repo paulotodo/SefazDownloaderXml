@@ -113,5 +113,18 @@ The application uses a modern full-stack approach:
 **Interface de usuário (reconciliação manual):**
 - **API**: Endpoint `POST /api/empresas/:id/reconciliar-nsu` protegido
 - **Frontend**: Botão com ícone RefreshCw ao lado de "Sincronizar"
+  - **Visível apenas** para empresas que já sincronizaram (ultimoNSU != 0)
+  - Oculto para empresas novas (previne cStat=656)
 - **UX**: Apenas 1 reconciliação por vez (previne concorrência)
 - **Toast**: Feedback com NSU atualizado e quantidade de consultas
+- **Validação**: Rejeita reconciliação de empresas com NSU=0 (exige sincronização primeiro)
+
+**Quando usar cada funcionalidade:**
+- **Sincronizar** (botão ▶️ Play): 
+  - Para empresas novas (primeira vez)
+  - Quando quer baixar XMLs
+  - Sincronização completa com download de documentos
+- **Alinhar NSU** (botão 🔄 RefreshCw):
+  - Apenas para empresas que já sincronizaram antes
+  - Quando quer apenas atualizar o ponteiro NSU sem baixar XMLs
+  - Útil quando há backlog grande e você quer avançar rapidamente

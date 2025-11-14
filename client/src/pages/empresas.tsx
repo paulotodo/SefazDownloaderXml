@@ -233,26 +233,28 @@ export default function Empresas() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              // Bloqueia múltiplas reconciliações simultâneas
-                              if (reconcilandoId !== null) return;
-                              reconciliarNSUMutation.mutate(empresa.id);
-                            }}
-                            disabled={reconcilandoId !== null}
-                            title="Reconciliar NSU (descobrir último NSU consultado)"
-                            data-testid={`button-reconciliar-${empresa.id}`}
-                          >
-                            <RefreshCw className={`w-4 h-4 ${reconcilandoId === empresa.id ? 'animate-spin' : ''}`} />
-                          </Button>
+                          {empresa.ultimoNSU !== "000000000000000" && empresa.ultimoNSU !== "0" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                // Bloqueia múltiplas reconciliações simultâneas
+                                if (reconcilandoId !== null) return;
+                                reconciliarNSUMutation.mutate(empresa.id);
+                              }}
+                              disabled={reconcilandoId !== null}
+                              title="Alinhar NSU sem baixar XMLs (avança rapidamente)"
+                              data-testid={`button-reconciliar-${empresa.id}`}
+                            >
+                              <RefreshCw className={`w-4 h-4 ${reconcilandoId === empresa.id ? 'animate-spin' : ''}`} />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => sincronizarMutation.mutate(empresa.id)}
                             disabled={sincronizarMutation.isPending}
-                            title="Sincronizar agora"
+                            title="Sincronizar agora (baixa XMLs)"
                             data-testid={`button-sync-${empresa.id}`}
                           >
                             <Play className="w-4 h-4" />
