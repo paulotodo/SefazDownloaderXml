@@ -8,6 +8,12 @@ import * as pako from "pako";
 import { storage } from "./storage";
 import type { Empresa } from "@shared/schema";
 import { loadPKCS12Certificate } from "./cert-loader";
+import { 
+  formatarDataBrasilCompleta, 
+  calcularMinutosRestantes, 
+  estaBloqueado, 
+  criarBloqueio 
+} from "./utils/timezone";
 
 const UF_CODE_MAP: Record<string, number> = {
   AC: 12, AL: 27, AM: 13, AP: 16, BA: 29, CE: 23,
@@ -340,9 +346,10 @@ export class SefazService {
 
   async sincronizarEmpresa(empresa: Empresa): Promise<number> {
     // Verifica se empresa está bloqueada (cStat 656)
-    if (empresa.bloqueadoAte && new Date() < empresa.bloqueadoAte) {
-      const tempoRestante = Math.ceil((empresa.bloqueadoAte.getTime() - Date.now()) / 1000 / 60);
-      const mensagemBloqueio = `Empresa bloqueada pela SEFAZ (erro 656) até ${empresa.bloqueadoAte.toLocaleString('pt-BR')}. Tempo restante: ${tempoRestante} minutos. Aguarde o desbloqueio automático.`;
+    if (estaBloqueado(empresa.bloqueadoAte)) {
+      const tempoRestante = calcularMinutosRestantes(empresa.bloqueadoAte);
+      const horarioBrasil = formatarDataBrasilCompleta(empresa.bloqueadoAte);
+      const mensagemBloqueio = `Empresa bloqueada pela SEFAZ (erro 656) até ${horarioBrasil}. Tempo restante: ${tempoRestante} minutos. Aguarde o desbloqueio automático.`;
       
       await storage.createLog({
         userId: empresa.userId,
@@ -351,7 +358,8 @@ export class SefazService {
         nivel: "warning",
         mensagem: "Tentativa de sincronização bloqueada",
         detalhes: JSON.stringify({ 
-          bloqueadoAte: empresa.bloqueadoAte.toISOString(),
+          bloqueadoAte: empresa.bloqueadoAte?.toISOString(),
+          bloqueadoAteHorarioBrasil: horarioBrasil,
           tempoRestanteMinutos: tempoRestante,
           observacao: "Aguarde o desbloqueio automático. Verifique se há outro sistema consultando este CNPJ."
         }),
@@ -492,13 +500,15 @@ export class SefazService {
         } else {
           // Erro 656: Bloqueio temporário ou NSU desatualizado
           if (response.cStat === "656") {
-            // Calcula bloqueio: 61 minutos a partir de agora
-            const bloqueadoAte = new Date(Date.now() + 61 * 60 * 1000);
+            // Calcula bloqueio: 61 minutos a partir de agora (UTC)
+            const bloqueadoAte = criarBloqueio(61);
             
             // Atualiza empresa com timestamp de bloqueio
             await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
 
-            // Log detalhado para diagnóstico
+            // Log detalhado para diagnóstico (exibe em horário do Brasil)
+            const horarioBrasilBloqueio = formatarDataBrasilCompleta(bloqueadoAte);
+            
             await storage.createLog({
               userId: empresa.userId,
               empresaId: empresa.id,
@@ -511,14 +521,15 @@ export class SefazService {
                 cStat: "656",
                 xMotivo: response.xMotivo,
                 bloqueadoAte: bloqueadoAte.toISOString(),
+                bloqueadoAteHorarioBrasil: horarioBrasilBloqueio,
                 diagnostico: iteracao === 0 
                   ? "Erro na primeira consulta: NSU pode estar desatualizado ou outro sistema está consultando este CNPJ"
                   : "Erro em consulta subsequente",
-                solucao: "Sistema bloqueado até " + bloqueadoAte.toLocaleString('pt-BR') + ". Verifique se há outro sistema (ERP, contador) consultando o mesmo CNPJ."
+                solucao: `Sistema bloqueado até ${horarioBrasilBloqueio}. Verifique se há outro sistema (ERP, contador) consultando o mesmo CNPJ.`
               }),
             });
 
-            const mensagemClara = `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. Empresa bloqueada até ${bloqueadoAte.toLocaleString('pt-BR')}. ${iteracao === 0 ? 'ATENÇÃO: Possível conflito com outro sistema consultando este CNPJ. Verifique ERPs/contadores.' : 'Aguarde o desbloqueio automático.'}`;
+            const mensagemClara = `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. Empresa bloqueada até ${horarioBrasilBloqueio}. ${iteracao === 0 ? 'ATENÇÃO: Possível conflito com outro sistema consultando este CNPJ. Verifique ERPs/contadores.' : 'Aguarde o desbloqueio automático.'}`;
             
             throw new Error(mensagemClara);
           }
@@ -661,9 +672,10 @@ export class SefazService {
     intervalo: { min: string; max: string };
   }> {
     // Verifica se empresa está bloqueada (cStat 656)
-    if (empresa.bloqueadoAte && new Date() < empresa.bloqueadoAte) {
-      const tempoRestante = Math.ceil((empresa.bloqueadoAte.getTime() - Date.now()) / 1000 / 60);
-      const mensagemBloqueio = `Empresa bloqueada pela SEFAZ (erro 656) até ${empresa.bloqueadoAte.toLocaleString('pt-BR')}. Tempo restante: ${tempoRestante} minutos. Aguarde o desbloqueio automático.`;
+    if (estaBloqueado(empresa.bloqueadoAte)) {
+      const tempoRestante = calcularMinutosRestantes(empresa.bloqueadoAte);
+      const horarioBrasil = formatarDataBrasilCompleta(empresa.bloqueadoAte);
+      const mensagemBloqueio = `Empresa bloqueada pela SEFAZ (erro 656) até ${horarioBrasil}. Tempo restante: ${tempoRestante} minutos. Aguarde o desbloqueio automático.`;
       
       await storage.createLog({
         userId: empresa.userId,
@@ -672,7 +684,8 @@ export class SefazService {
         nivel: "warning",
         mensagem: "Tentativa de reconciliação bloqueada",
         detalhes: JSON.stringify({ 
-          bloqueadoAte: empresa.bloqueadoAte.toISOString(),
+          bloqueadoAte: empresa.bloqueadoAte?.toISOString(),
+          bloqueadoAteHorarioBrasil: horarioBrasil,
           tempoRestanteMinutos: tempoRestante,
           observacao: "Aguarde o desbloqueio automático. Verifique se há outro sistema consultando este CNPJ."
         }),

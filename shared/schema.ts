@@ -8,8 +8,8 @@ export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(), // references auth.users(id)
   email: text("email").notNull(),
   nomeCompleto: text("nome_completo"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 export type Profile = typeof profiles.$inferSelect;
@@ -26,9 +26,9 @@ export const empresas = pgTable("empresas", {
   certificadoSenha: text("certificado_senha").notNull(), // senha do certificado (criptografada)
   ativo: boolean("ativo").notNull().default(true),
   ultimoNSU: text("ultimo_nsu").notNull().default("000000000000000"),
-  bloqueadoAte: timestamp("bloqueado_ate"), // Bloqueio temporário SEFAZ (cStat 656) até este timestamp
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  bloqueadoAte: timestamp("bloqueado_ate", { withTimezone: true, mode: 'date' }), // Bloqueio temporário SEFAZ (cStat 656) até este timestamp (UTC)
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 export const insertEmpresaSchema = createInsertSchema(empresas, {
@@ -54,14 +54,14 @@ export const sincronizacoes = pgTable("sincronizacoes", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(), // references auth.users(id)
   empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
-  dataInicio: timestamp("data_inicio").notNull(),
-  dataFim: timestamp("data_fim"),
+  dataInicio: timestamp("data_inicio", { withTimezone: true, mode: 'date' }).notNull(),
+  dataFim: timestamp("data_fim", { withTimezone: true, mode: 'date' }),
   status: text("status").notNull(), // "em_andamento", "concluida", "erro"
   nsuInicial: text("nsu_inicial").notNull(),
   nsuFinal: text("nsu_final"),
   xmlsBaixados: integer("xmls_baixados").notNull().default(0),
   mensagemErro: text("mensagem_erro"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 export const insertSincronizacaoSchema = createInsertSchema(sincronizacoes).omit({
@@ -81,10 +81,10 @@ export const xmls = pgTable("xmls", {
   sincronizacaoId: uuid("sincronizacao_id").references(() => sincronizacoes.id, { onDelete: "set null" }),
   chaveNFe: text("chave_nfe").notNull(),
   numeroNF: text("numero_nf").notNull(),
-  dataEmissao: timestamp("data_emissao").notNull(),
+  dataEmissao: timestamp("data_emissao", { withTimezone: true, mode: 'date' }).notNull(),
   caminhoArquivo: text("caminho_arquivo").notNull(),
   tamanhoBytes: integer("tamanho_bytes").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 export const insertXmlSchema = createInsertSchema(xmls).omit({
@@ -105,7 +105,7 @@ export const logs = pgTable("logs", {
   nivel: text("nivel").notNull(), // "info", "warning", "error"
   mensagem: text("mensagem").notNull(),
   detalhes: text("detalhes"), // JSON com detalhes adicionais
-  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  timestamp: timestamp("timestamp", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 export const insertLogSchema = createInsertSchema(logs).omit({
