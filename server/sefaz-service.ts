@@ -239,8 +239,8 @@ export class SefazService {
 
     const cStat = String(retDistDFeInt.cStat || "");
     const xMotivo = String(retDistDFeInt.xMotivo || "");
-    const ultNSU = retDistDFeInt.ultNSU;
-    const maxNSU = retDistDFeInt.maxNSU;
+    const ultNSU = String(retDistDFeInt.ultNSU || "");
+    const maxNSU = String(retDistDFeInt.maxNSU || "");
 
     let docZips: Array<{ NSU: string; schema: string; content: string }> = [];
     const lote = retDistDFeInt.loteDistDFeInt;
