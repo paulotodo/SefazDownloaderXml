@@ -261,22 +261,30 @@ tar -czf certificados-backup.tar.gz ./certificados
 
 ## ⚠️ Problemas Comuns
 
-### Erro: "Unsupported PKCS12 PFX data"
+### ✅ Erro: "Unsupported PKCS12 PFX data" - RESOLVIDO
 
-**Causa:** Certificados A1 brasileiros usam algoritmos legados não suportados por padrão no Node.js moderno.
+**Causa:** Certificados A1 brasileiros usam algoritmos legados (DES/3DES) não suportados pelo OpenSSL 3.x.
 
-**✅ Solução:** Já implementada! O sistema detecta e trata automaticamente certificados legados.
+**✅ Solução Implementada:** O sistema usa **`node-forge`** para converter certificados PKCS12 legados para formato PEM antes de criar o HTTPS Agent.
 
-**Se persistir:**
-1. Verificar senha do certificado
-2. Baixar certificado novamente
-3. Consultar: [`TROUBLESHOOTING-CERTIFICADOS.md`](TROUBLESHOOTING-CERTIFICADOS.md)
+**Como funciona:**
+1. `node-forge` lê o certificado .pfx com algoritmos legados
+2. Converte para formato PEM (key, cert, ca)
+3. PEM é nativamente suportado pelo OpenSSL 3.x
+4. Certificados são armazenados em cache para performance
+
+**Agora suporta:**
+- ✅ Certificados A1 brasileiros com DES/3DES
+- ✅ Node.js 18+, 20+ (OpenSSL 3.x)
+- ✅ Validações automáticas (senha, formato, expiração)
+- ✅ Mensagens de erro claras e acionáveis
 
 ### Outros Problemas
 
 - **Senha incorreta:** "MAC verify error" → Verificar senha do .pfx
-- **Certificado expirado:** Renovar com Autoridade Certificadora
+- **Certificado expirado:** Renovar com Autoridade Certificadora  
 - **Arquivo corrompido:** Fazer novo download
+- **Chave privada ausente:** Verificar se .pfx está completo
 
 **Documentação completa:** [`TROUBLESHOOTING-CERTIFICADOS.md`](TROUBLESHOOTING-CERTIFICADOS.md)
 

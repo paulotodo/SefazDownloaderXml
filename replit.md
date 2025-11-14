@@ -215,18 +215,33 @@ docker compose logs -f app
 
 ## Correções Recentes
 
-### Suporte a Certificados Digitais Legados (13/11/2025)
-- ✅ **Corrigido:** Erro "Unsupported PKCS12 PFX data"
-- ✅ Implementado suporte para algoritmos legados (DES, 3DES)
-- ✅ Adicionada validação automática de certificados
-- ✅ Mensagens de erro mais claras e acionáveis
-- ✅ Documentação completa: `TROUBLESHOOTING-CERTIFICADOS.md`
+### ✅ Suporte a Certificados Digitais Legados (14/11/2025) - RESOLVIDO
+**Problema:** Erro "Unsupported PKCS12 PFX data" ao carregar certificados A1 brasileiros
 
-**Detalhes técnicos:**
-- Habilitado `SSL_OP_LEGACY_SERVER_CONNECT` no HTTPS Agent
-- Validação de tamanho mínimo do arquivo .pfx
-- Tratamento específico de erros de senha e formato
-- TLS 1.2/1.3 configurado corretamente
+**Solução Final Implementada:**
+- ✅ Biblioteca `node-forge` instalada para parsing PKCS12 legado
+- ✅ Novo utilitário `server/cert-loader.ts`:
+  - Converte certificados PFX (DES/3DES) para formato PEM
+  - Cache em memória para performance
+  - Validações robustas com mensagens claras
+  - Type-safe (TypeScript strict mode)
+- ✅ `server/sefaz-service.ts` adaptado:
+  - Usa `loadPKCS12Certificate()` para carregar certificados
+  - HTTPS Agent com certificados PEM (key, cert, ca)
+  - Compatível com OpenSSL 3.x (Node.js 18+/20+)
+- ✅ Documentação completa: `TROUBLESHOOTING-CERTIFICADOS.md`
+- ✅ Revisado e aprovado pelo architect
+
+**Por que funciona:**
+- `node-forge` consegue ler PKCS12 com algoritmos legados (DES/3DES)
+- Converte para PEM que é **nativamente suportado** pelo OpenSSL 3.x
+- Evita completamente o erro "Unsupported PKCS12 PFX data"
+
+**Arquivos modificados/criados:**
+- ✅ `server/cert-loader.ts` (novo)
+- ✅ `server/sefaz-service.ts` (adaptado)
+- ✅ `TROUBLESHOOTING-CERTIFICADOS.md` (atualizado)
+- ✅ `package.json` (node-forge + @types/node-forge)
 
 ## Status do Projeto
 ✅ **Sistema 100% funcional** com autenticação multi-usuário completa:
