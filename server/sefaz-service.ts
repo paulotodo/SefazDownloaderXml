@@ -1,6 +1,7 @@
 import https from "https";
 import crypto from "crypto";
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import { XMLParser } from "fast-xml-parser";
 import * as pako from "pako";
@@ -378,9 +379,8 @@ export class SefazService {
         console.log('📨 Resposta XML SEFAZ (primeiros 1000 chars):', responseXml.substring(0, 1000));
         
         // Salvar XML completo em arquivo temporário para debug
-        const fs = require('fs');
         const debugPath = '/tmp/sefaz-response-debug.xml';
-        fs.writeFileSync(debugPath, responseXml, 'utf-8');
+        fsSync.writeFileSync(debugPath, responseXml, 'utf-8');
         console.log(`💾 XML completo salvo em: ${debugPath}`);
         
         const response = this.parseSOAPResponse(responseXml);
