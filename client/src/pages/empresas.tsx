@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Building2, Plus, Pencil, Trash2, Search, Play } from "lucide-react";
+import { Building2, Plus, Pencil, Trash2, Search, Play, RefreshCw } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -42,6 +42,7 @@ interface Empresa {
 
 export default function Empresas() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [reconcilandoId, setReconcilandoId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const { data: empresas, isLoading } = useQuery<Empresa[]>({
@@ -77,6 +78,35 @@ export default function Empresas() {
     onError: (error: Error) => {
       toast({
         title: "Erro ao sincronizar",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const reconciliarNSUMutation = useMutation({
+    mutationFn: (id: string) => {
+      setReconcilandoId(id);
+      return apiRequest<{
+        success: boolean;
+        nsuAnterior: string;
+        nsuAtual: string;
+        chamadas: number;
+        intervalo: { min: string; max: string };
+      }>(`/api/empresas/${id}/reconciliar-nsu`, { method: "POST" });
+    },
+    onSuccess: (data) => {
+      setReconcilandoId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/empresas"] });
+      toast({
+        title: "NSU reconciliado com sucesso",
+        description: `NSU atualizado de ${data.nsuAnterior} para ${data.nsuAtual} (${data.chamadas} consultas)`,
+      });
+    },
+    onError: (error: Error) => {
+      setReconcilandoId(null);
+      toast({
+        title: "Erro ao reconciliar NSU",
         description: error.message,
         variant: "destructive",
       });
@@ -203,6 +233,20 @@ export default function Empresas() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              // Bloqueia múltiplas reconciliações simultâneas
+                              if (reconcilandoId !== null) return;
+                              reconciliarNSUMutation.mutate(empresa.id);
+                            }}
+                            disabled={reconcilandoId !== null}
+                            title="Reconciliar NSU (descobrir último NSU consultado)"
+                            data-testid={`button-reconciliar-${empresa.id}`}
+                          >
+                            <RefreshCw className={`w-4 h-4 ${reconcilandoId === empresa.id ? 'animate-spin' : ''}`} />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
