@@ -331,6 +331,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/empresas/:id/resetar-nsu", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const empresa = await storage.getEmpresa(req.params.id, userId);
+      
+      if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+      }
+
+      // Reseta NSU para 0 (primeira consulta)
+      const nsuAnterior = empresa.ultimoNSU;
+      await storage.updateEmpresa(empresa.id, { 
+        ultimoNSU: "000000000000000",
+        bloqueadoAte: null // Remove bloqueio se existir
+      }, userId);
+
+      await storage.createLog({
+        userId,
+        empresaId: empresa.id,
+        sincronizacaoId: null,
+        nivel: "warning",
+        mensagem: `NSU resetado manualmente: ${empresa.razaoSocial}`,
+        detalhes: JSON.stringify({ 
+          nsuAnterior,
+          nsuNovo: "000000000000000",
+          motivo: "Reset manual para resolver conflito com SEFAZ (cStat 656)"
+        }),
+      });
+      
+      res.json({
+        success: true,
+        nsuAnterior,
+        nsuNovo: "000000000000000",
+        message: "NSU resetado com sucesso. Agora você pode sincronizar normalmente."
+      });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== XMLs ========== (protegidos)
   app.get("/api/xmls", authenticateUser, async (req, res) => {
     const userId = req.user!.id;
