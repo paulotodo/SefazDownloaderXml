@@ -152,6 +152,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         certificadoSenha: req.body.certificadoSenha,
       });
 
+      // ===== VALIDAR CERTIFICADO E SENHA =====
+      const { validateCertificate } = await import("./cert-loader");
+      const validation = await validateCertificate(req.file.path, data.certificadoSenha);
+      
+      if (!validation.valid) {
+        // Remove arquivo enviado
+        await fs.unlink(req.file.path);
+        
+        // Retornar erro específico
+        if (validation.error?.includes('Senha do certificado incorreta')) {
+          return res.status(400).json({ 
+            error: "Senha do certificado incorreta. Verifique a senha e tente novamente." 
+          });
+        } else if (validation.error?.includes('Arquivo de certificado não encontrado')) {
+          return res.status(400).json({ 
+            error: "Erro ao processar o arquivo do certificado. Tente fazer upload novamente." 
+          });
+        } else if (validation.isExpired) {
+          const now = new Date();
+          const notBefore = validation.notBefore || new Date();
+          const notAfter = validation.notAfter || new Date();
+          
+          if (now < notBefore) {
+            // Certificado ainda não é válido
+            return res.status(400).json({ 
+              error: `Certificado ainda não é válido. Será válido a partir de ${notBefore.toLocaleDateString('pt-BR')}.` 
+            });
+          } else {
+            // Certificado expirado
+            return res.status(400).json({ 
+              error: `Certificado expirado em ${notAfter.toLocaleDateString('pt-BR')}. Renove seu certificado digital.` 
+            });
+          }
+        } else {
+          return res.status(400).json({ 
+            error: validation.error || "Certificado inválido. Verifique o arquivo e a senha." 
+          });
+        }
+      }
+
+      // Avisar se certificado está próximo de expirar (menos de 30 dias)
+      if (validation.daysUntilExpiry && validation.daysUntilExpiry < 30 && validation.daysUntilExpiry > 0) {
+        console.warn(`⚠️ Certificado expira em ${validation.daysUntilExpiry} dias (${data.cnpj})`);
+      }
+
       // Verifica se CNPJ já existe para este usuário
       const existing = await storage.getEmpresaByCNPJ(data.cnpj, userId);
       if (existing) {
@@ -173,7 +218,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sincronizacaoId: null,
         nivel: "info",
         mensagem: `Empresa cadastrada: ${empresa.razaoSocial}`,
-        detalhes: JSON.stringify({ cnpj: empresa.cnpj, uf: empresa.uf }),
+        detalhes: JSON.stringify({ 
+          cnpj: empresa.cnpj, 
+          uf: empresa.uf,
+          certificadoValido: `${validation.notBefore?.toLocaleDateString('pt-BR')} até ${validation.notAfter?.toLocaleDateString('pt-BR')}`,
+          diasRestantes: validation.daysUntilExpiry
+        }),
       });
 
       res.status(201).json(empresa);

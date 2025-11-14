@@ -8,6 +8,17 @@ export interface CertificateData {
   ca: string[];     // Certificados CA (chain) em formato PEM
 }
 
+export interface CertificateValidation {
+  valid: boolean;
+  error?: string;
+  notBefore?: Date;
+  notAfter?: Date;
+  subject?: string;
+  issuer?: string;
+  isExpired?: boolean;
+  daysUntilExpiry?: number;
+}
+
 interface CertificateCache {
   [filePath: string]: CertificateData;
 }
@@ -180,4 +191,57 @@ export function clearCertificateCache(): void {
 export function isCertificateCached(pfxPath: string, password: string): boolean {
   const cacheKey = `${pfxPath}:${password}`;
   return cacheKey in certCache;
+}
+
+/**
+ * Valida certificado PKCS12 e extrai informações
+ * 
+ * @param pfxPath - Caminho do arquivo .pfx
+ * @param password - Senha do certificado
+ * @returns Informações do certificado (validade, titular, etc)
+ */
+export async function validateCertificate(
+  pfxPath: string,
+  password: string
+): Promise<CertificateValidation> {
+  try {
+    // Tenta carregar o certificado (valida senha e formato)
+    const certData = await loadPKCS12Certificate(pfxPath, password);
+    
+    // Parse do certificado PEM para extrair informações
+    const certAsn1 = forge.pki.certificateFromPem(certData.cert);
+    
+    const notBefore = certAsn1.validity.notBefore;
+    const notAfter = certAsn1.validity.notAfter;
+    const now = new Date();
+    const isExpired = now > notAfter || now < notBefore;
+    
+    // Calcula dias até expiração
+    const daysUntilExpiry = Math.floor((notAfter.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    
+    // Extrai subject (titular)
+    const subject = certAsn1.subject.attributes
+      .map(attr => `${attr.shortName}=${attr.value}`)
+      .join(', ');
+    
+    // Extrai issuer (emissor)
+    const issuer = certAsn1.issuer.attributes
+      .map(attr => `${attr.shortName}=${attr.value}`)
+      .join(', ');
+    
+    return {
+      valid: !isExpired,
+      notBefore,
+      notAfter,
+      subject,
+      issuer,
+      isExpired,
+      daysUntilExpiry,
+    };
+  } catch (error: any) {
+    return {
+      valid: false,
+      error: error.message,
+    };
+  }
 }
