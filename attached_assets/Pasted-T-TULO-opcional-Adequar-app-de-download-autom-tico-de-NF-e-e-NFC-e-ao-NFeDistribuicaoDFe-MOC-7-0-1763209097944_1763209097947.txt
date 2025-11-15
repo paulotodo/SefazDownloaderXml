@@ -1,0 +1,329 @@
+TÍTULO (opcional):
+Adequar app de download automático de NF-e e NFC-e ao NFeDistribuicaoDFe (MOC 7.0 + NT 2014.002)
+
+PROMPT PARA O REPLIT / AGENT / GHOSTWRITER:
+
+Você é um assistente técnico especializado em desenvolvimento fiscal no Brasil, com foco em Nota Fiscal Eletrônica (NF-e, modelo 55) e Nota Fiscal de Consumidor Eletrônica (NFC-e, modelo 65), integrando com o Web Service NFeDistribuicaoDFe.
+
+Quero que você analise e adapte o aplicativo já existente neste Repl para que ele implemente um sistema robusto de download automático de XMLs de NF-e e NFC-e emitidas contra o meu CNPJ, em conformidade com:
+
+Manual de Orientação do Contribuinte – MOC versão 7.0 (NF-e / NFC-e)
+
+Nota Técnica 2014.002 – Web Service de Distribuição de DF-e de Interesse dos Atores da NF-e, considerando suas versões/atualizações mais recentes.
+
+Schemas e leiautes oficiais relacionados ao serviço NFeDistribuicaoDFe (distDFeInt, retDistDFeInt) e demais XSDs necessários.
+
+
+
+---
+
+1. Contexto do aplicativo
+
+O app está hospedado neste Repl.
+
+A linguagem principal do projeto é: [INFORMAR: Python / Node.js / outra].
+
+O certificado digital utilizado é A1 (arquivo) e deve ser tratado de forma segura (variáveis de ambiente / storage seguro).
+
+O aplicativo deve suportar duas formas de execução:
+
+1. Modo job agendado (execução automática e recorrente).
+
+
+2. Modo manual, em que um usuário pode disparar a rotina sob demanda (por exemplo, via linha de comando, endpoint HTTP simples, ou outra interface que você julgar apropriada dentro do Replit).
+
+
+
+
+O objetivo final é:
+
+> “Manter um processo automático e também manual de consulta ao Web Service NFeDistribuicaoDFe, baixando e armazenando os XMLs de NF-e (modelo 55) e NFC-e (modelo 65) de interesse do meu CNPJ, com controle de NSU, logs, tratamento de erros e estrutura de armazenamento organizada.”
+
+
+
+Adapte TODO o código existente para atender a esse objetivo, reaproveitando o que fizer sentido e refatorando o que for necessário.
+
+
+---
+
+2. Funcionalidades obrigatórias
+
+Ao final da adaptação, o aplicativo deve ser capaz de:
+
+2.1. Consumir o Web Service NFeDistribuicaoDFe (NF-e e NFC-e)
+
+Implementar chamadas ao serviço de distribuição de DF-e de interesse dos atores da NF-e, conforme especificação da NT 2014.002.
+
+Suportar, no mínimo, consulta:
+
+por NSU (busca incremental, a partir do último NSU processado);
+
+por chave de acesso, quando aplicável.
+
+
+Tratar adequadamente os documentos distribuídos relativos a:
+
+NF-e (modelo 55)
+
+NFC-e (modelo 65)
+
+Eventos vinculados (cancelamento, carta de correção etc.) quando forem distribuídos.
+
+
+
+2.2. Controle completo de NSU
+
+Manter, em armazenamento persistente (arquivo, banco de dados ou equivalente), o último NSU processado para o CNPJ de interesse.
+
+Na inicialização da rotina (tanto agendada quanto manual), ler o último NSU e continuar a partir dele.
+
+Implementar lógica para:
+
+tratar NSU inicial;
+
+atualizar o NSU máximo retornado;
+
+evitar reprocessamento de NSUs;
+
+lidar com lacunas/NSUs faltantes conforme orientações da NT 2014.002.
+
+
+
+2.3. Armazenamento organizado dos XMLs
+
+Salvar os documentos retornados (XML completo quando permitido, resumo quando for o caso) em diretórios estruturados, por exemplo:
+
+./xml/NFe/[ANO]/[MES]/[CNPJ]/[CHAVE].xml
+
+./xml/NFCe/[ANO]/[MES]/[CNPJ]/[CHAVE].xml
+
+
+Prever tratamento diferenciado para:
+
+XML completo de NF-e / NFC-e;
+
+resumos de NF-e / NFC-e;
+
+eventos (cancelamento, CC-e etc.), criando subpastas ou convenções de nomes apropriadas.
+
+
+
+2.4. Configurações do sistema
+
+Criar uma camada clara de configuração (por exemplo, .env, config.json ou equivalente) contendo, no mínimo:
+
+CNPJ principal de interesse: [MEU_CNPJ]
+
+Modelos de documento a tratar: 55 (NF-e) e 65 (NFC-e)
+
+Ambiente: homologação ou produção
+
+URLs do Web Service NFeDistribuicaoDFe para cada ambiente, conforme documentação oficial vigente.
+
+Caminho/armazenamento do certificado A1 e senha do certificado (sempre via variável de ambiente ou mecanismo seguro).
+
+Intervalos de execução do job agendado (em minutos).
+
+
+2.5. Modos de execução (job agendado + manual)
+
+Implemente os dois modos:
+
+1. Modo job agendado (automático)
+
+Um laço ou mecanismo equivalente que:
+
+Execute a rotina de consulta e processamento em intervalos configuráveis (ex.: a cada 30 ou 60 minutos),
+
+Respeite limites e boas práticas (sem sobrecarga do serviço da Sefaz),
+
+Registre logs de cada ciclo (mesmo quando não houver novos documentos).
+
+
+
+
+2. Modo manual
+
+Uma forma simples de disparar a rotina “na hora”, por exemplo:
+
+comando python main.py --run-once (ou equivalente em Node.js);
+
+ou endpoint HTTP simples que, ao ser acessado, dispara uma execução da rotina;
+
+ou outra interface adequada dentro do Replit.
+
+
+Esse modo manual deve aproveitar exatamente a mesma lógica de negócio (mesmas funções de consulta, mesma leitura de NSU, mesmo armazenamento), apenas sem o agendamento.
+
+
+
+
+2.6. Tratamento do certificado digital A1
+
+Usar certificado digital A1 para autenticação/assinatura das requisições, conforme exigido pela Sefaz/ambiente nacional.
+
+Adotar boas práticas:
+
+não versionar o arquivo do certificado;
+
+usar variáveis de ambiente ou storage seguro para caminho e senha;
+
+encapsular a lógica de carregamento/uso do certificado em uma camada própria (ex.: cert_manager).
+
+
+
+2.7. Logs e observabilidade
+
+Registrar logs detalhados de:
+
+início e fim de cada ciclo (agendado ou manual);
+
+chamadas ao Web Service, códigos de retorno;
+
+quantidade de NSUs processados;
+
+quantidade de documentos recebidos (NF-e, NFC-e, eventos);
+
+erros de comunicação/certificado;
+
+situações de “sem novos documentos”.
+
+
+Os logs devem ser exibidos no console do Replit e também armazenados em arquivo (por exemplo: logs/app.log).
+
+
+
+---
+
+3. Conformidade com a documentação oficial
+
+Ao adaptar o app, siga estritamente:
+
+O MOC 7.0 (NF-e / NFC-e) para:
+
+conceitos gerais de DF-e;
+
+modelos 55 e 65;
+
+ambientes de homologação e produção;
+
+visão geral de distribuição de documentos fiscais eletrônicos.
+
+
+A NT 2014.002 (e atualizações) para o Web Service NFeDistribuicaoDFe, em especial:
+
+definição de “ator interessado”;
+
+definição e tratamento de NSU;
+
+tipos de consulta disponíveis;
+
+regras de sigilo fiscal (quando o destinatário tem direito ao XML completo ou somente ao resumo);
+
+detalhes de estrutura de mensagens distDFeInt e retDistDFeInt.
+
+
+
+Se houver dúvida de interpretação, escolha sempre a abordagem mais aderente ao texto oficial e mais segura do ponto de vista fiscal e de integridade dos dados.
+
+
+---
+
+4. Qualidade de código e arquitetura
+
+Ao modificar o código existente:
+
+1. Organização em camadas
+
+Integração com WebService (requisição/assinatura/envio/parse do retorno).
+
+Regras de negócio (controle de NSU, decisão de salvar, tratamento de duplicidade, distinção entre NF-e e NFC-e).
+
+Infraestrutura (armazenamento em disco/banco, logs, leitura de configuração, carregamento do certificado A1).
+
+
+
+2. Tratamento de erros
+
+Tratar timeouts, falhas de rede, erros de DNS, problemas de certificado, serviço indisponível, respostas de erro da Sefaz.
+
+Implementar retries com backoff em erros temporários, respeitando limites e boas práticas (sem “martelar” o WebService).
+
+
+
+3. Testabilidade
+
+Criar funções que permitam testar isoladamente:
+
+parsing do retDistDFeInt para NF-e e NFC-e;
+
+cálculo de próximo NSU;
+
+lógica de decisão entre “já processado” e “novo documento”.
+
+
+
+
+4. Documentação interna
+
+Comentar pontos críticos com referência à MOC/NT (ex.: “// conforme NT 2014.002, item X.Y – tratamento de NSU máximo”).
+
+
+
+
+
+---
+
+5. Como você deve interagir comigo durante a adaptação
+
+1. Primeiro passo:
+
+Apresente um diagnóstico da estrutura atual do app (arquivos, libs, fluxo principal).
+
+Proponha um plano de refatoração em etapas claras (ex.: “Etapa 1 – Config; Etapa 2 – Integração WS; Etapa 3 – NSU; Etapa 4 – Armazenamento; Etapa 5 – Agendamento + Manual; Etapa 6 – Logs”).
+
+
+
+2. Durante as mudanças:
+
+Mostre as alterações arquivo por arquivo, explicando o que foi modificado e por quê.
+
+Destaque onde foi implementado:
+
+suporte a NF-e/NFC-e;
+
+controle de NSU;
+
+uso do certificado A1;
+
+modo agendado;
+
+modo manual;
+
+logs.
+
+
+
+
+3. Entrega final:
+
+Crie um README no projeto explicando:
+
+como configurar CNPJ, ambiente e certificado A1;
+
+como rodar o app em modo manual;
+
+como deixar o job agendado rodando;
+
+onde os XMLs são salvos e como a estrutura de pastas está organizada;
+
+como consultar os logs.
+
+
+
+
+
+
+---
+
+Use tudo isso como especificação oficial do projeto: adapte o aplicativo existente neste Repl até que ele cumpra todos os pontos acima, para NF-e (55) e NFC-e (65), com execução manual e via job agendado, usando certificado digital A1
