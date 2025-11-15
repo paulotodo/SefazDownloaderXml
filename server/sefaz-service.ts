@@ -403,14 +403,16 @@ export class SefazService {
     const resNFe = parsed.resNFe;
     if (!resNFe) throw new Error("XML não é um resNFe");
 
-    const chNFe = resNFe.chNFe || "";
+    // FIX: Garantir que chNFe seja sempre string (pode vir como array ou objeto do parser XML)
+    const chNFeRaw = resNFe.chNFe;
+    const chNFe = String(Array.isArray(chNFeRaw) ? chNFeRaw[0] : chNFeRaw || "");
     const dhEmi = resNFe.dhEmi || new Date().toISOString();
     
-    if (!chNFe) throw new Error("Não foi possível extrair chave do resNFe");
+    if (!chNFe || chNFe.length < 44) throw new Error("Chave de acesso inválida no resNFe");
 
     // Extrai modelo da chave (posições 20-22): "55" ou "65"
     // Formato chave: UF(2) + AAMM(6) + CNPJ(14) + MOD(2) + ...
-    const modelo = chNFe.length >= 22 ? chNFe.substring(20, 22) : "55";
+    const modelo = chNFe.substring(20, 22) || "55";
 
     // Verifica duplicata
     const existing = await storage.getXmlByChave(chNFe, empresa.userId);
@@ -474,12 +476,14 @@ export class SefazService {
     const evento = procEvento.evento;
     const infEvento = evento?.infEvento;
     
-    const chNFe = infEvento?.chNFe || "";
-    const tpEvento = infEvento?.tpEvento || "";
+    // FIX: Garantir que chNFe seja sempre string (pode vir como array ou objeto do parser XML)
+    const chNFeRaw = infEvento?.chNFe;
+    const chNFe = String(Array.isArray(chNFeRaw) ? chNFeRaw[0] : chNFeRaw || "");
+    const tpEvento = String(infEvento?.tpEvento || "");
     const dhEvento = infEvento?.dhEvento || new Date().toISOString();
-    const nSeqEvento = infEvento?.nSeqEvento || "1";
+    const nSeqEvento = String(infEvento?.nSeqEvento || "1");
 
-    if (!chNFe) throw new Error("Não foi possível extrair chave do procEventoNFe");
+    if (!chNFe || chNFe.length < 44) throw new Error("Chave de acesso inválida no procEventoNFe");
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Eventos/CHAVE_tpEvento_seq.xml
     const dataEmissao = new Date(dhEvento);
@@ -536,11 +540,13 @@ export class SefazService {
     const resEvento = parsed.resEvento;
     if (!resEvento) throw new Error("XML não é um resEvento");
 
-    const chNFe = resEvento.chNFe || "";
-    const tpEvento = resEvento.tpEvento || "";
+    // FIX: Garantir que chNFe seja sempre string (pode vir como array ou objeto do parser XML)
+    const chNFeRaw = resEvento.chNFe;
+    const chNFe = String(Array.isArray(chNFeRaw) ? chNFeRaw[0] : chNFeRaw || "");
+    const tpEvento = String(resEvento.tpEvento || "");
     const dhEvento = resEvento.dhRegEvento || new Date().toISOString();
 
-    if (!chNFe) throw new Error("Não foi possível extrair chave do resEvento");
+    if (!chNFe || chNFe.length < 44) throw new Error("Chave de acesso inválida no resEvento");
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Eventos/Resumos/CHAVE_tpEvento_nsu.xml
     const dataEmissao = new Date(dhEvento);
