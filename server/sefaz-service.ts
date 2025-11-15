@@ -48,6 +48,7 @@ export class SefazService {
     this.parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "",
+      parseTagValue: false, // CRÍTICO: Mantém TODOS os valores como string (preserva chaves de 44 dígitos)
     });
     this.xmlDestPath = process.env.XML_DEST_PATH || "./xmls";
   }
