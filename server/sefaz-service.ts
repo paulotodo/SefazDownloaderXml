@@ -540,13 +540,19 @@ export class SefazService {
     const resEvento = parsed.resEvento;
     if (!resEvento) throw new Error("XML não é um resEvento");
 
+    // DEBUG: Ver estrutura completa do resEvento
+    console.log("[DEBUG resEvento]", JSON.stringify(resEvento, null, 2));
+
     // FIX: Garantir que chNFe seja sempre string (pode vir como array ou objeto do parser XML)
     const chNFeRaw = resEvento.chNFe;
     const chNFe = String(Array.isArray(chNFeRaw) ? chNFeRaw[0] : chNFeRaw || "");
     const tpEvento = String(resEvento.tpEvento || "");
-    const dhEvento = resEvento.dhRegEvento || new Date().toISOString();
+    const dhEvento = resEvento.dhEvento || resEvento.dhRecbto || new Date().toISOString();
 
-    if (!chNFe || chNFe.length < 44) throw new Error("Chave de acesso inválida no resEvento");
+    if (!chNFe || chNFe.length < 44) {
+      console.error("[ERRO resEvento] chNFe inválido:", { chNFe, length: chNFe.length, chNFeRaw });
+      throw new Error(`Chave de acesso inválida no resEvento (recebido: "${chNFe}", length: ${chNFe.length})`);
+    }
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Eventos/Resumos/CHAVE_tpEvento_nsu.xml
     const dataEmissao = new Date(dhEvento);
