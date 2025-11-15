@@ -485,13 +485,15 @@ export class SefazService {
             empresaId: empresa.id,
             sincronizacaoId: sincronizacao.id,
             nivel: "info",
-            mensagem: `cStat=137: Sem documentos. NT 2014.002 exige aguardar 1h`,
+            mensagem: `cStat=137: Sem novos documentos neste momento`,
             detalhes: JSON.stringify({ 
               ultNSU: nsuAtual,
               maxNSU,
               bloqueadoAte: bloqueadoAte.toISOString(),
               proximaConsultaHorarioBrasil,
-              observacao: "Empresa bloqueada até " + proximaConsultaHorarioBrasil
+              motivo: "SEFAZ retornou cStat=137 (nenhum documento localizado)",
+              acaoAutomatica: "Sistema aguardará 1h antes de tentar novamente conforme NT 2014.002 §3.11.4",
+              observacao: "Bloqueio preventivo até " + proximaConsultaHorarioBrasil + ". Próxima sincronização automática via cron."
             }),
           });
           
@@ -538,7 +540,7 @@ export class SefazService {
               empresaId: empresa.id,
               sincronizacaoId: sincronizacao.id,
               nivel: "error",
-              mensagem: `Erro 656 - Bloqueio SEFAZ ativado`,
+              mensagem: `cStat=656: Consumo indevido detectado pela SEFAZ`,
               detalhes: JSON.stringify({ 
                 iteracao: iteracao + 1,
                 ultNSUEnviado: nsuAtual,
@@ -546,10 +548,12 @@ export class SefazService {
                 xMotivo: response.xMotivo,
                 bloqueadoAte: bloqueadoAte.toISOString(),
                 bloqueadoAteHorarioBrasil: horarioBrasilBloqueio,
-                diagnostico: iteracao === 0 
-                  ? "Erro na primeira consulta: NSU pode estar desatualizado ou outro sistema está consultando este CNPJ"
-                  : "Erro em consulta subsequente",
-                solucao: `Sistema bloqueado até ${horarioBrasilBloqueio}. Verifique se há outro sistema (ERP, contador) consultando o mesmo CNPJ.`
+                motivo: "SEFAZ aplicou bloqueio temporário por violação das regras de consulta (NT 2014.002)",
+                causaProvavel: iteracao === 0 
+                  ? "NSU desatualizado ou outro sistema (ERP/contador) consultando este CNPJ simultaneamente"
+                  : "Múltiplas consultas em sequência ou NSU fora de ordem",
+                acaoNecessaria: "AGUARDAR desbloqueio automático - NÃO tentar novamente antes de " + horarioBrasilBloqueio,
+                orientacao: "Se persistir após desbloqueio, verifique se há outro sistema consultando o mesmo CNPJ ou use 'Alinhar NSU'"
               }),
             });
 
@@ -838,13 +842,15 @@ export class SefazService {
             empresaId: empresa.id,
             sincronizacaoId: null,
             nivel: "info",
-            mensagem: `cStat=137 na reconciliação: Sem documentos. NT 2014.002 exige aguardar 1h`,
+            mensagem: `cStat=137: Sem novos documentos na reconciliação`,
             detalhes: JSON.stringify({ 
               ultNSU,
               maxNSU,
               bloqueadoAte: bloqueadoAte.toISOString(),
               proximaConsultaHorarioBrasil,
-              observacao: "Empresa bloqueada até " + proximaConsultaHorarioBrasil
+              motivo: "SEFAZ retornou cStat=137 (nenhum documento localizado) durante alinhamento de NSU",
+              acaoAutomatica: "Sistema aguardará 1h antes de tentar novamente conforme NT 2014.002 §3.11.4",
+              observacao: "Bloqueio preventivo até " + proximaConsultaHorarioBrasil + ". Tente novamente após esse horário."
             }),
           });
           
@@ -871,7 +877,7 @@ export class SefazService {
               empresaId: empresa.id,
               sincronizacaoId: null,
               nivel: "error",
-              mensagem: `Erro 656 - Bloqueio SEFAZ ativado durante reconciliação`,
+              mensagem: `cStat=656: Consumo indevido durante reconciliação`,
               detalhes: JSON.stringify({ 
                 iteracao: i + 1,
                 ultNSUEnviado: nsuAtual,
@@ -879,8 +885,10 @@ export class SefazService {
                 xMotivo: response.xMotivo,
                 bloqueadoAte: bloqueadoAte.toISOString(),
                 bloqueadoAteHorarioBrasil: horarioBrasilBloqueio,
-                diagnostico: "NSU fora de sequência ou consulta prematura detectada pela SEFAZ",
-                solucao: `Sistema bloqueado até ${horarioBrasilBloqueio}. Após desbloqueio, use 'Alinhar NSU' para sincronizar corretamente.`
+                motivo: "SEFAZ aplicou bloqueio temporário durante alinhamento de NSU (NT 2014.002)",
+                causaProvavel: "NSU fora de sequência ou outro sistema consultando este CNPJ",
+                acaoNecessaria: "AGUARDAR desbloqueio automático - NÃO tentar novamente antes de " + horarioBrasilBloqueio,
+                orientacao: "Após desbloqueio, use 'Sincronizar' primeiro. Se NSU estiver muito desatualizado, o sistema alinhará automaticamente."
               }),
             });
 
