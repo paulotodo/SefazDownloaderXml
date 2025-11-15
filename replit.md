@@ -3,6 +3,18 @@
 ## Overview
 This web application automates the download of XMLs (nfeProc) from SEFAZ, offering hourly synchronization for multiple registered companies. It provides a robust, multi-tenant solution for managing fiscal documents, aiming to streamline compliance and data access for businesses. The project integrates a modern web stack with secure authentication and a reliable system for interacting with government services, promising efficiency and reduced manual effort in fiscal document management.
 
+## Recent Critical Fixes (November 15, 2025)
+### 1. XML Parser Configuration (chNFe Precision Loss)
+- **Problem**: Parser was converting 44-digit chNFe to `number`, causing precision loss (e.g., `42251149531261...` → `4.2251149531261e+43`)
+- **Solution**: Configured `fast-xml-parser` with `parseTagValue: false` to maintain ALL values as strings, preserving complete 44-digit chNFe keys
+- **Files**: `server/sefaz-service.ts` (constructor)
+
+### 2. NT 2014.002 §3.11.4 Compliance (cStat 656 Prevention)
+- **Problem**: System was triggering cStat=656 (Consumo Indevido) repeatedly by consulting SEFAZ when `ultNSU == maxNSU` without mandatory 1-hour wait
+- **Solution**: Implemented automatic 65-minute blocking when `ultNSU == maxNSU` is detected, preventing invalid subsequent requests
+- **Behavior**: System now correctly stops querying and waits 1 hour when fully synchronized, as mandated by SEFAZ regulations
+- **Files**: `server/sefaz-service.ts` (lines 911-940, 968-974)
+
 ## User Preferences
 I prefer clear and direct communication. When making changes or suggesting improvements, please explain the "why" behind them, focusing on the benefits and potential impact. I value iterative development and would like to be consulted before any major architectural shifts or significant code refactoring. Please ensure that all suggestions are actionable and provide code examples where appropriate. I prefer a coding style that emphasizes readability and maintainability, utilizing TypeScript's type safety effectively.
 

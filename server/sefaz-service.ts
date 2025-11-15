@@ -908,7 +908,31 @@ export class SefazService {
         // Verifica alinhamento completo (conforme NT 2014.002)
         if (nsuAtual === maxNSU) {
           alinhamentoCompleto = true;
-          console.log(`[Sincronização] Alinhamento completo: ultNSU === maxNSU (${nsuAtual})`);
+          
+          // NT 2014.002 §3.11.4: Quando ultNSU == maxNSU, BLOQUEAR por 1 hora
+          const bloqueadoAte = criarBloqueio(65);
+          await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+          
+          const proximaConsultaHorarioBrasil = formatarDataBrasilCompleta(bloqueadoAte);
+          
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: sincronizacao.id,
+            nivel: "info",
+            mensagem: `Alinhamento completo: ultNSU == maxNSU`,
+            detalhes: JSON.stringify({ 
+              ultNSU: nsuAtual,
+              maxNSU,
+              bloqueadoAte: bloqueadoAte.toISOString(),
+              proximaConsultaHorarioBrasil,
+              motivo: "Sistema está totalmente sincronizado (ultNSU == maxNSU)",
+              acaoAutomatica: "Bloqueio de 1h conforme NT 2014.002 §3.11.4 para evitar cStat=656",
+              observacao: "Próxima sincronização automática via cron após " + proximaConsultaHorarioBrasil
+            }),
+          });
+          
+          console.log(`[Sincronização] Alinhamento completo: ultNSU === maxNSU (${nsuAtual}). Bloqueado até ${proximaConsultaHorarioBrasil}`);
           break;
         }
 
@@ -938,10 +962,12 @@ export class SefazService {
         throw new Error(mensagemErro);
       }
 
-      // Atualiza empresa com novo NSU e limpa bloqueio (se houver)
+      // Atualiza empresa com novo NSU
+      // IMPORTANTE: NÃO limpa bloqueio se foi aplicado por ultNSU==maxNSU ou cStat=137
+      // O bloqueio só deve ser limpo automaticamente após expirar o prazo
       await storage.updateEmpresa(empresa.id, { 
-        ultimoNSU: nsuAtual,
-        bloqueadoAte: null // Limpa bloqueio após sincronização bem-sucedida
+        ultimoNSU: nsuAtual
+        // bloqueadoAte mantém valor existente (pode ter sido setado em ultNSU==maxNSU ou cStat=137)
       }, empresa.userId);
 
       // Finaliza sincronização
