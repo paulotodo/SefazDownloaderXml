@@ -474,8 +474,8 @@ export class SefazService {
           nsuAtual = response.ultNSU || nsuAtual;
           maxNSU = response.maxNSU || nsuAtual;
           
-          // PERSISTIR bloqueio de 1h conforme NT 2014.002
-          const bloqueadoAte = criarBloqueio(60);
+          // PERSISTIR bloqueio de 65min (margem de segurança conforme NT 2014.002)
+          const bloqueadoAte = criarBloqueio(65);
           await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
           
           const proximaConsultaHorarioBrasil = formatarDataBrasilCompleta(bloqueadoAte);
@@ -526,38 +526,68 @@ export class SefazService {
         } else {
           // Erro 656: Bloqueio temporário ou NSU desatualizado
           if (response.cStat === "656") {
-            // Calcula bloqueio: 61 minutos a partir de agora (UTC)
-            const bloqueadoAte = criarBloqueio(61);
+            // NT 2014.002 v1.14: SEFAZ retorna ultNSU correto na rejeição 656
+            // CRÍTICO: Atualizar NSU ANTES de lançar erro para evitar loop infinito!
+            const nsuRetornadoPelaSefaz = response.ultNSU && response.ultNSU.trim() !== "" && response.ultNSU !== "0" ? response.ultNSU : null;
             
-            // Atualiza empresa com timestamp de bloqueio
-            await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+            // Calcula diferença usando BigInt para preservar zeros à esquerda
+            const diferenca = nsuRetornadoPelaSefaz 
+              ? Number(BigInt(nsuRetornadoPelaSefaz) - BigInt(nsuAtual))
+              : 0;
+            
+            // Calcula bloqueio: 65 minutos (margem de segurança conforme NT)
+            const bloqueadoAte = criarBloqueio(65);
+            
+            // ATUALIZA empresa com NSU correto + bloqueio (conforme NT 2014.002 v1.14)
+            // Só atualiza ultimoNSU se SEFAZ retornou valor válido
+            const updatePayload = nsuRetornadoPelaSefaz
+              ? { ultimoNSU: nsuRetornadoPelaSefaz, bloqueadoAte }
+              : { bloqueadoAte };
+              
+            await storage.updateEmpresa(empresa.id, updatePayload, empresa.userId);
 
             // Log detalhado para diagnóstico (exibe em horário do Brasil)
             const horarioBrasilBloqueio = formatarDataBrasilCompleta(bloqueadoAte);
+            
+            // Detecta concorrência com outros sistemas (ERP/contador)
+            const nivelLog = diferenca > 1 ? "warning" : "error";
+            const mensagemConcorrencia = diferenca > 1 
+              ? `ATENÇÃO: NSU avançou ${diferenca} posições! Possível outro sistema consultando este CNPJ.`
+              : "NSU atualizado conforme retorno da SEFAZ.";
             
             await storage.createLog({
               userId: empresa.userId,
               empresaId: empresa.id,
               sincronizacaoId: sincronizacao.id,
-              nivel: "error",
+              nivel: nivelLog,
               mensagem: `cStat=656: Consumo indevido detectado pela SEFAZ`,
               detalhes: JSON.stringify({ 
                 iteracao: iteracao + 1,
                 ultNSUEnviado: nsuAtual,
+                ultNSURetornadoPelaSefaz: nsuRetornadoPelaSefaz || "não retornado",
+                diferencaNSU: diferenca,
+                nsuAtualizado: nsuRetornadoPelaSefaz || nsuAtual,
                 cStat: "656",
                 xMotivo: response.xMotivo,
                 bloqueadoAte: bloqueadoAte.toISOString(),
                 bloqueadoAteHorarioBrasil: horarioBrasilBloqueio,
                 motivo: "SEFAZ aplicou bloqueio temporário por violação das regras de consulta (NT 2014.002)",
-                causaProvavel: iteracao === 0 
-                  ? "NSU desatualizado ou outro sistema (ERP/contador) consultando este CNPJ simultaneamente"
-                  : "Múltiplas consultas em sequência ou NSU fora de ordem",
+                causaProvavel: diferenca > 1
+                  ? "Outro sistema (ERP/contador) está consultando este CNPJ simultaneamente"
+                  : iteracao === 0 
+                    ? "NSU desatualizado ou primeira consulta após bloqueio anterior"
+                    : "Múltiplas consultas em sequência ou NSU fora de ordem",
+                acaoTomada: nsuRetornadoPelaSefaz
+                  ? `NSU atualizado de ${nsuAtual} para ${nsuRetornadoPelaSefaz} conforme retorno da SEFAZ (NT 2014.002 v1.14)`
+                  : `SEFAZ não retornou ultNSU válido - NSU mantido em ${nsuAtual}`,
                 acaoNecessaria: "AGUARDAR desbloqueio automático - NÃO tentar novamente antes de " + horarioBrasilBloqueio,
-                orientacao: "Se persistir após desbloqueio, verifique se há outro sistema consultando o mesmo CNPJ ou use 'Alinhar NSU'"
+                orientacao: mensagemConcorrencia
               }),
             });
 
-            const mensagemClara = `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. Empresa bloqueada até ${horarioBrasilBloqueio}. ${iteracao === 0 ? 'ATENÇÃO: Possível conflito com outro sistema consultando este CNPJ. Verifique ERPs/contadores.' : 'Aguarde o desbloqueio automático.'}`;
+            const mensagemClara = nsuRetornadoPelaSefaz
+              ? `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. NSU atualizado para ${nsuRetornadoPelaSefaz}. Empresa bloqueada até ${horarioBrasilBloqueio}. ${diferenca > 1 ? 'ATENÇÃO: Detectada concorrência com outro sistema!' : 'Aguarde o desbloqueio automático.'}`
+              : `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. SEFAZ não retornou ultNSU válido. Empresa bloqueada até ${horarioBrasilBloqueio}. Aguarde o desbloqueio automático.`;
             
             throw new Error(mensagemClara);
           }
@@ -831,8 +861,8 @@ export class SefazService {
           const ultNSU = response.ultNSU || "0";
           maxNSU = response.maxNSU || ultNSU;
           
-          // PERSISTIR bloqueio de 1h conforme NT 2014.002
-          const bloqueadoAte = criarBloqueio(60);
+          // PERSISTIR bloqueio de 65min (margem de segurança conforme NT 2014.002)
+          const bloqueadoAte = criarBloqueio(65);
           await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
           
           const proximaConsultaHorarioBrasil = formatarDataBrasilCompleta(bloqueadoAte);
@@ -866,33 +896,66 @@ export class SefazService {
         } else {
           // Erro 656 ou outro erro
           if (response.cStat === "656") {
-            const bloqueadoAte = criarBloqueio(61);
+            // NT 2014.002 v1.14: SEFAZ retorna ultNSU correto na rejeição 656
+            // CRÍTICO: Atualizar NSU ANTES de lançar erro para evitar loop infinito!
+            const ultNSU = response.ultNSU || "0";
+            const nsuRetornadoPelaSefaz = ultNSU && ultNSU.trim() !== "" && ultNSU !== "0" ? ultNSU : null;
             
-            await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+            // Calcula diferença usando BigInt para preservar zeros à esquerda
+            const diferenca = nsuRetornadoPelaSefaz 
+              ? Number(BigInt(nsuRetornadoPelaSefaz) - BigInt(nsuAtual))
+              : 0;
+            
+            // Calcula bloqueio: 65 minutos (margem de segurança conforme NT)
+            const bloqueadoAte = criarBloqueio(65);
+            
+            // ATUALIZA empresa com NSU correto + bloqueio (conforme NT 2014.002 v1.14)
+            // Só atualiza ultimoNSU se SEFAZ retornou valor válido
+            const updatePayload = nsuRetornadoPelaSefaz
+              ? { ultimoNSU: nsuRetornadoPelaSefaz, bloqueadoAte }
+              : { bloqueadoAte };
+              
+            await storage.updateEmpresa(empresa.id, updatePayload, empresa.userId);
             
             const horarioBrasilBloqueio = formatarDataBrasilCompleta(bloqueadoAte);
+            
+            // Detecta concorrência com outros sistemas (ERP/contador)
+            const nivelLog = diferenca > 1 ? "warning" : "error";
+            const mensagemConcorrencia = diferenca > 1 
+              ? `ATENÇÃO: NSU avançou ${diferenca} posições durante reconciliação! Possível outro sistema consultando este CNPJ.`
+              : "NSU atualizado conforme retorno da SEFAZ.";
             
             await storage.createLog({
               userId: empresa.userId,
               empresaId: empresa.id,
               sincronizacaoId: null,
-              nivel: "error",
+              nivel: nivelLog,
               mensagem: `cStat=656: Consumo indevido durante reconciliação`,
               detalhes: JSON.stringify({ 
                 iteracao: i + 1,
                 ultNSUEnviado: nsuAtual,
+                ultNSURetornadoPelaSefaz: nsuRetornadoPelaSefaz || "não retornado",
+                diferencaNSU: diferenca,
+                nsuAtualizado: nsuRetornadoPelaSefaz || nsuAtual,
                 cStat: "656",
                 xMotivo: response.xMotivo,
                 bloqueadoAte: bloqueadoAte.toISOString(),
                 bloqueadoAteHorarioBrasil: horarioBrasilBloqueio,
                 motivo: "SEFAZ aplicou bloqueio temporário durante alinhamento de NSU (NT 2014.002)",
-                causaProvavel: "NSU fora de sequência ou outro sistema consultando este CNPJ",
+                causaProvavel: diferenca > 1
+                  ? "Outro sistema (ERP/contador) está consultando este CNPJ simultaneamente"
+                  : "NSU fora de sequência ou primeira consulta após bloqueio anterior",
+                acaoTomada: nsuRetornadoPelaSefaz
+                  ? `NSU atualizado de ${nsuAtual} para ${nsuRetornadoPelaSefaz} conforme retorno da SEFAZ (NT 2014.002 v1.14)`
+                  : `SEFAZ não retornou ultNSU válido - NSU mantido em ${nsuAtual}`,
                 acaoNecessaria: "AGUARDAR desbloqueio automático - NÃO tentar novamente antes de " + horarioBrasilBloqueio,
-                orientacao: "Após desbloqueio, use 'Sincronizar' primeiro. Se NSU estiver muito desatualizado, o sistema alinhará automaticamente."
+                orientacao: mensagemConcorrencia
               }),
             });
 
-            const mensagemClara = `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. Empresa bloqueada até ${horarioBrasilBloqueio}. Aguarde o desbloqueio automático.`;
+            const mensagemClara = nsuRetornadoPelaSefaz
+              ? `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. NSU atualizado para ${nsuRetornadoPelaSefaz}. Empresa bloqueada até ${horarioBrasilBloqueio}. ${diferenca > 1 ? 'ATENÇÃO: Detectada concorrência com outro sistema!' : 'Aguarde o desbloqueio automático.'}`
+              : `Bloqueio SEFAZ (cStat 656): ${response.xMotivo}. SEFAZ não retornou ultNSU válido. Empresa bloqueada até ${horarioBrasilBloqueio}. Aguarde o desbloqueio automático.`;
             throw new Error(mensagemClara);
           }
           throw new Error(`SEFAZ retornou cStat ${response.cStat}: ${response.xMotivo}`);
