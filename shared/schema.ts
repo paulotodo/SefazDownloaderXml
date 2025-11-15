@@ -81,6 +81,8 @@ export const xmls = pgTable("xmls", {
   sincronizacaoId: uuid("sincronizacao_id").references(() => sincronizacoes.id, { onDelete: "set null" }),
   chaveNFe: text("chave_nfe").notNull(),
   numeroNF: text("numero_nf").notNull(),
+  modelo: text("modelo").notNull().default("55"), // "55" (NF-e) ou "65" (NFC-e) - MOC 7.0 §2.2
+  tipoDocumento: text("tipo_documento").notNull().default("nfeProc"), // "nfeProc", "resNFe", "procEventoNFe", "resEvento" - NT 2014.002 §3.3
   dataEmissao: timestamp("data_emissao", { withTimezone: true, mode: 'date' }).notNull(),
   caminhoArquivo: text("caminho_arquivo").notNull(),
   tamanhoBytes: integer("tamanho_bytes").notNull(),

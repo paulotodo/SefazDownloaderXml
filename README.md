@@ -1,20 +1,280 @@
-# 🚀 SEFAZ XML Sync
+# Sistema de Download Automático de NF-e e NFC-e (NFeDistribuicaoDFe)
 
-Sistema completo de download automático de XMLs (nfeProc) da SEFAZ com autenticação multi-usuário.
+Sistema robusto e compliant com **MOC 7.0** e **NT 2014.002** para download automático de XMLs fiscais (NF-e modelo 55 e NFC-e modelo 65) via Web Service **NFeDistribuicaoDFe** da SEFAZ.
 
-## ✨ Características
+---
 
-- 🔐 **Autenticação Multi-Usuário** com Supabase Auth (JWT)
-- 🔄 **Sincronização Automática** a cada 1 hora via cron
-- 📁 **Organização Inteligente** de XMLs por CNPJ/Ano/Mês
-- 🏢 **Multi-Empresa** - cada usuário gerencia suas próprias empresas
-- 🔒 **Row-Level Security (RLS)** para isolamento completo de dados
-- 📜 **Upload de Certificados Digitais** (.pfx) via interface web
-- 🎨 **Interface Moderna** com Shadcn UI + Tailwind CSS
-- 🐳 **Deploy Docker** pronto para produção (standalone ou Portainer)
-- 🔐 **SSL/HTTPS Automático** via Let's Encrypt
+## 📋 **Funcionalidades**
 
-## 🛠️ Stack Tecnológica
+### ✅ **Conformidade Total**
+- **MOC 7.0** (Manual de Orientação do Contribuinte NF-e/NFC-e)
+- **NT 2014.002** (Web Service de Distribuição de DF-e de Interesse dos Atores da NF-e)
+- Suporte completo para **NF-e (modelo 55)** e **NFC-e (modelo 65)**
+- Processa TODOS os schemas: `nfeProc`, `resNFe`, `procEventoNFe`, `resEvento`
+
+### 🔄 **Modos de Execução**
+1. **Agendado (Automático)**: Cron job executa sincronização a cada hora
+2. **Manual**: Interface web ou endpoint HTTP para execução sob demanda
+
+### 🔐 **Segurança**
+- Certificado Digital A1 (PKCS12) armazenado de forma segura
+- Autenticação JWT com Supabase Auth
+- Multi-tenant com isolamento via Row-Level Security (RLS)
+- Variáveis de ambiente para dados sensíveis
+
+### 📊 **Controle Rigoroso de NSU**
+- Persiste último NSU processado
+- Implementa bloqueio automático conforme NT 2014.002:
+  - **cStat=137**: Bloqueio de 65min (sem documentos)
+  - **cStat=656**: Bloqueio de 65min (consumo indevido)
+- Detecção automática de concorrência com outros sistemas (ERP)
+- Reconciliação de NSU para backlogs grandes
+
+### 📁 **Armazenamento Organizado**
+```
+xmls/
+├── NFe/                          # Nota Fiscal Eletrônica (modelo 55)
+│   └── CNPJ/
+│       └── ANO/
+│           └── MES/
+│               ├── numeroNF.xml                    # nfeProc (XML completo)
+│               ├── Resumos/
+│               │   └── CHAVE_nsuXXX.xml           # resNFe (resumo)
+│               └── Eventos/
+│                   ├── CHAVE_tpEvento_seq_nsu.xml # procEventoNFe
+│                   └── Resumos/
+│                       └── CHAVE_tpEvento_nsu.xml # resEvento
+└── NFCe/                         # NFC-e (modelo 65) - mesma estrutura
+```
+
+### 📝 **Logs Completos**
+- **Console**: Logs coloridos em tempo real
+- **Arquivo**: `logs/app-YYYY-MM-DD.log` (rotação automática)
+- **Banco de dados**: Logs detalhados com rastreabilidade
+
+---
+
+## 🚀 **Instalação e Configuração**
+
+### **1. Pré-requisitos**
+- Node.js 20+
+- Conta Supabase (PostgreSQL + Auth + Storage)
+- Certificado Digital A1 (.pfx ou .p12)
+- CNPJ autorizado na SEFAZ
+
+### **2. Variáveis de Ambiente**
+
+Crie um arquivo `.env` na raiz do projeto:
+
+```env
+# Ambiente
+NODE_ENV=production
+PORT=5000
+
+# Supabase (OBRIGATÓRIO)
+SUPABASE_URL=https://seu-projeto.supabase.co
+SUPABASE_ANON_KEY=sua-chave-anon
+SUPABASE_SERVICE_ROLE_KEY=sua-chave-service-role
+
+# Sessão (OBRIGATÓRIO)
+SESSION_SECRET=sua-chave-secreta-aleatoria-aqui
+
+# Armazenamento (OPCIONAL - padrões funcionam bem)
+XML_DEST_PATH=./xmls           # Diretório para salvar XMLs
+LOG_PATH=./logs                # Diretório para logs em arquivo
+MAX_LOG_FILES=30               # Quantidade de arquivos de log (30 dias)
+
+# Sincronização (OPCIONAL - padrões conforme NT 2014.002)
+SYNC_CRON=0 * * * *            # Cron: a cada hora (minuto 0)
+MAX_ITERATIONS=200             # Limite de segurança para loops
+DELAY_MS=300                   # Delay entre requests (ms)
+BLOQUEIO_MINUTOS=65            # Bloqueio após erro 656/137 (margem de segurança)
+
+# Simulação SEFAZ em Desenvolvimento (OPCIONAL)
+ALLOW_SEFAZ_SIMULATION=true    # Permite testar sem SEFAZ real
+```
+
+### **3. Migração do Banco de Dados**
+
+Execute o script SQL no **Supabase Dashboard** → **SQL Editor**:
+
+```bash
+cat migrations/add_modelo_tipodocumento.sql
+```
+
+Ou copie e cole o conteúdo de `migrations/add_modelo_tipodocumento.sql`.
+
+### **4. Executar o Sistema**
+
+```bash
+# Instalar dependências
+npm install
+
+# Modo desenvolvimento (com hot-reload)
+npm run dev
+
+# Modo produção
+npm start
+```
+
+O sistema estará disponível em `http://localhost:5000`
+
+---
+
+## 📖 **Como Usar**
+
+### **Modo 1: Interface Web (Recomendado)**
+
+1. **Acesse**: `http://localhost:5000`
+2. **Registre-se** ou faça **Login**
+3. **Cadastre Empresa**:
+   - CNPJ
+   - Razão Social
+   - UF
+   - Ambiente (Produção ou Homologação)
+   - Upload do certificado A1 (.pfx)
+   - Senha do certificado
+4. **Sincronizar**:
+   - **Play (▶️)**: Baixa XMLs novos
+   - **RefreshCw (🔄)**: Alinha NSU (sem baixar XMLs)
+5. **Visualizar**:
+   - Dashboard com estatísticas
+   - Lista de XMLs baixados
+   - Logs detalhados
+
+### **Modo 2: HTTP Endpoint (Automação)**
+
+Execute sincronização manual via API:
+
+```bash
+# 1. Obter token de autenticação
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"seu@email.com","password":"sua-senha"}'
+
+# Resposta: { "access_token": "JWT_TOKEN_AQUI" }
+
+# 2. Disparar sincronização manual
+curl -X POST http://localhost:5000/api/sincronizacoes/executar \
+  -H "Authorization: Bearer JWT_TOKEN_AQUI"
+
+# Resposta: { "message": "Sincronização de todas as empresas iniciada" }
+```
+
+### **Modo 3: Agendamento Automático (Padrão)**
+
+O sistema executa automaticamente **a cada hora** (configurável via `SYNC_CRON`).
+
+**Para alterar o intervalo:**
+
+```env
+# A cada 30 minutos
+SYNC_CRON=*/30 * * * *
+
+# Às 3h, 9h, 15h e 21h
+SYNC_CRON=0 3,9,15,21 * * *
+
+# A cada 2 horas
+SYNC_CRON=0 */2 * * *
+```
+
+---
+
+## 🔧 **Configurações Avançadas**
+
+### **Ambientes SEFAZ**
+
+O sistema suporta:
+- **Produção**: `https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx`
+- **Homologação**: `https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx`
+
+Configure por empresa na interface web.
+
+### **Schemas Processados**
+
+Conforme **NT 2014.002 §3.3**:
+
+| Schema | Descrição | Quando |
+|--------|-----------|--------|
+| `nfeProc` | XML completo de NF-e/NFC-e | Destinatário tem direito ao XML completo |
+| `resNFe` | Resumo de NF-e/NFC-e | Destinatário só tem direito ao resumo |
+| `procEventoNFe` | Eventos (Cancelamento, CCe, Manifestação) | Sempre que houver evento |
+| `resEvento` | Resumo de evento | Resumo de evento disponível |
+
+### **Tipos de Eventos**
+
+| Código | Descrição |
+|--------|-----------|
+| 110110 | Carta de Correção (CCe) |
+| 110111 | Cancelamento |
+| 210200 | Confirmação da Operação |
+| 210210 | Ciência da Operação |
+| 210220 | Desconhecimento da Operação |
+| 210240 | Operação não Realizada |
+
+---
+
+## 📂 **Estrutura do Projeto**
+
+```
+.
+├── server/
+│   ├── config/
+│   │   └── index.ts              # Configuração centralizada
+│   ├── sefaz-service.ts          # Cliente SEFAZ NFeDistribuicaoDFe
+│   ├── cert-loader.ts            # Gerenciador de certificados A1
+│   ├── routes.ts                 # Endpoints da API
+│   ├── storage.ts                # Interface de Storage
+│   ├── supabase-storage.ts       # Implementação Supabase
+│   ├── logger.ts                 # Sistema de logs (console + arquivo)
+│   └── auth-middleware.ts        # Autenticação JWT
+├── client/
+│   └── src/
+│       ├── pages/                # Páginas React
+│       └── components/           # Componentes reutilizáveis
+├── shared/
+│   └── schema.ts                 # Schemas TypeScript + Zod
+├── migrations/
+│   └── add_modelo_tipodocumento.sql  # Migração banco de dados
+├── xmls/                         # XMLs baixados (criado automaticamente)
+├── logs/                         # Logs em arquivo (criado automaticamente)
+└── certificados/                 # Certificados A1 (criado automaticamente)
+```
+
+---
+
+## 🐛 **Troubleshooting**
+
+### **Erro 656 (Consumo Indevido)**
+
+**Causa**: NSU desatualizado ou consultas muito frequentes  
+**Solução**:
+1. Aguarde 1 hora (bloqueio automático)
+2. Use "Alinhar NSU" (🔄) após desbloqueio
+3. Verifique se há outro sistema (ERP/contador) consultando simultaneamente
+
+### **Erro 137 (Sem Documentos)**
+
+**Normal!** Significa que não há novos documentos naquele momento.  
+O sistema bloqueia automaticamente por 1h conforme NT 2014.002.
+
+### **Certificado Inválido**
+
+Verifique:
+- Certificado é A1 (.pfx ou .p12)?
+- Senha está correta?
+- Certificado não está expirado?
+- CNPJ do certificado corresponde ao CNPJ cadastrado?
+
+### **Logs em Branco**
+
+Arquivos de log estão em `logs/app-YYYY-MM-DD.log`. Se não existir:
+1. Verifique permissões do diretório `logs/`
+2. Verifique `LOG_PATH` no `.env`
+
+---
+
+## 🛠️ **Stack Tecnológica**
 
 ### Frontend
 - React 18 + TypeScript
@@ -29,293 +289,38 @@ Sistema completo de download automático de XMLs (nfeProc) da SEFAZ com autentic
 - node-cron (agendamento)
 - fast-xml-parser (processamento XML)
 - multer (upload de arquivos)
+- node-forge (certificados PKCS12)
 
 ### Deploy
 - Docker + Docker Compose
 - Nginx + Certbot (standalone)
 - Traefik + Portainer (alternativo)
 
-## 📦 Instalação
+---
 
-### Desenvolvimento Local
+## 📚 **Referências Oficiais**
 
-```bash
-# Instalar dependências
-npm install
-
-# Configurar variáveis de ambiente
-cp .env.example .env
-# Editar .env com suas credenciais Supabase
-
-# Executar schema SQL no Supabase
-# Ver arquivo: supabase-schema.sql
-
-# Iniciar servidor de desenvolvimento
-npm run dev
-```
-
-Acesse: `http://localhost:5000`
-
-### Deploy em Produção
-
-**Duas opções disponíveis:**
-
-#### Opção 1: Docker Standalone (Nginx + Certbot)
-```bash
-# Ver guia completo
-cat DEPLOYMENT.md
-```
-
-#### Opção 2: Portainer + Traefik (Recomendado)
-```bash
-# Ver guia completo
-cat DEPLOYMENT-PORTAINER.md
-
-# Quick start
-cat QUICK-START-PORTAINER.md
-```
-
-## 📖 Documentação
-
-- 📘 [`DEPLOYMENT.md`](DEPLOYMENT.md) - Deploy Docker standalone completo
-- 🐳 [`DEPLOYMENT-PORTAINER.md`](DEPLOYMENT-PORTAINER.md) - Deploy Portainer + Traefik
-- ⚡ [`QUICK-START-PORTAINER.md`](QUICK-START-PORTAINER.md) - Referência rápida Portainer
-- 📦 [`GIT-SETUP.md`](GIT-SETUP.md) - Como subir código para GitHub
-- 🗄️ [`supabase-schema.sql`](supabase-schema.sql) - Schema do banco de dados
-- 🔧 [`TROUBLESHOOTING-CERTIFICADOS.md`](TROUBLESHOOTING-CERTIFICADOS.md) - Problemas com certificados digitais
-
-## 🔐 Configuração Supabase
-
-### 1. Criar Projeto Supabase
-
-1. Acesse: https://supabase.com
-2. Criar novo projeto
-3. Copiar credenciais:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-
-### 2. Executar Schema SQL
-
-1. No Supabase Dashboard: **SQL Editor**
-2. Copiar e executar: `supabase-schema.sql`
-3. Verificar criação de tabelas e RLS policies
-
-### 3. Configurar Autenticação
-
-**Opção A: Sem Confirmação de Email (Recomendado para apps internos)**
-- Supabase → Authentication → Providers → Email
-- Desabilitar: "Confirm email"
-
-**Opção B: Com Confirmação de Email**
-- Supabase → Authentication → URL Configuration
-- Site URL: `https://seu-dominio.com`
-- Redirect URLs: `https://seu-dominio.com/auth/confirm`
-
-## 🔑 Variáveis de Ambiente
-
-```env
-# Supabase
-SUPABASE_URL=https://seu-projeto.supabase.co
-SUPABASE_ANON_KEY=eyJhbGc...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
-
-# Session
-SESSION_SECRET=gere-com-openssl-rand-base64-32
-
-# Ambiente
-NODE_ENV=production
-PORT=5000
-
-# Storage
-XML_DEST_PATH=/app/xmls
-
-# Desenvolvimento
-ALLOW_SEFAZ_SIMULATION=false  # true em dev, false em prod
-```
-
-## 🚀 Funcionalidades
-
-### Dashboard
-- Estatísticas em tempo real
-- Total de empresas cadastradas
-- XMLs baixados hoje
-- Última sincronização
-- Feed de atividades recentes
-
-### Gestão de Empresas
-- Cadastro de múltiplas empresas (CNPJ)
-- Upload de certificados digitais (.pfx)
-- Configuração por ambiente (produção/homologação)
-- Sincronização manual ou automática
-- Status e controle de NSU
-
-### Navegador de XMLs
-- Estrutura em árvore: CNPJ → Ano → Mês
-- Visualização e download de XMLs
-- Busca e filtros
-- Detalhes de NF-e
-
-### Logs do Sistema
-- Filtragem por nível (info/warning/error)
-- Histórico de sincronizações
-- Detalhes de erros e warnings
-
-### Sincronização SEFAZ
-- Automática a cada 1 hora (configurável)
-- Download via NFeDistribuicaoDFe (SOAP)
-- Processamento de docZips
-- Extração de nfeProc
-- Atualização automática de NSU
-- Retry em caso de falhas
-
-## 🔒 Segurança
-
-- ✅ Autenticação JWT server-side
-- ✅ Row-Level Security (RLS) no Supabase
-- ✅ Isolamento multi-tenant por userId
-- ✅ Certificados .pfx com permissões restritas
-- ✅ HTTPS obrigatório em produção
-- ✅ Validação Zod em todas as entradas
-- ✅ Health checks configurados
-
-## 📂 Estrutura do Projeto
-
-```
-sefaz-xml-sync/
-├── client/               # Frontend React
-│   ├── src/
-│   │   ├── components/  # Componentes UI
-│   │   ├── contexts/    # Context API (Auth)
-│   │   ├── hooks/       # Custom hooks
-│   │   ├── lib/         # Utilities
-│   │   └── pages/       # Páginas/rotas
-│   └── index.html
-├── server/              # Backend Express
-│   ├── auth-middleware.ts
-│   ├── auth-routes.ts
-│   ├── routes.ts
-│   ├── sefaz-service.ts
-│   ├── supabase-storage.ts
-│   └── index.ts
-├── shared/              # Código compartilhado
-│   └── schema.ts        # Schemas Zod/Drizzle
-├── docker-compose.yml   # Docker standalone
-├── docker-compose.portainer.yml  # Portainer + Traefik
-├── Dockerfile
-└── nginx/               # Configuração Nginx
-```
-
-## 🧪 Modo Simulação (Desenvolvimento)
-
-Para testar sem certificados reais:
-
-```env
-ALLOW_SEFAZ_SIMULATION=true
-```
-
-Retorna XMLs simulados para desenvolvimento.
-
-**⚠️ NUNCA use em produção!**
-
-## 📊 Banco de Dados
-
-### Tabelas Principais
-
-- **profiles** - Dados dos usuários
-- **empresas** - CNPJs e certificados
-- **sincronizacoes** - Histórico de sincronizações
-- **xmls** - Metadados dos XMLs baixados
-- **logs** - Logs do sistema
-
-### RLS Policies
-
-Todas as tabelas têm policies que filtram por `userId`, garantindo isolamento completo entre usuários.
-
-## 🔄 Atualização
-
-### Via Git (Portainer)
-
-1. Commit e push alterações
-2. Portainer → Stacks → Pull and redeploy
-
-### Via Linha de Comando
-
-```bash
-git pull
-docker compose down
-docker compose build
-docker compose up -d
-```
-
-## 💾 Backup
-
-```bash
-# Backup de XMLs e certificados
-./deploy-scripts/deploy.sh backup
-
-# OU manualmente
-tar -czf xmls-backup.tar.gz ./xmls
-tar -czf certificados-backup.tar.gz ./certificados
-```
-
-## ⚠️ Problemas Comuns
-
-### ✅ Erro: "Unsupported PKCS12 PFX data" - RESOLVIDO
-
-**Causa:** Certificados A1 brasileiros usam algoritmos legados (DES/3DES) não suportados pelo OpenSSL 3.x.
-
-**✅ Solução Implementada:** O sistema usa **`node-forge`** para converter certificados PKCS12 legados para formato PEM antes de criar o HTTPS Agent.
-
-**Como funciona:**
-1. `node-forge` lê o certificado .pfx com algoritmos legados
-2. Converte para formato PEM (key, cert, ca)
-3. PEM é nativamente suportado pelo OpenSSL 3.x
-4. Certificados são armazenados em cache para performance
-
-**Agora suporta:**
-- ✅ Certificados A1 brasileiros com DES/3DES
-- ✅ Node.js 18+, 20+ (OpenSSL 3.x)
-- ✅ Validações automáticas (senha, formato, expiração)
-- ✅ Mensagens de erro claras e acionáveis
-
-### Outros Problemas
-
-- **Senha incorreta:** "MAC verify error" → Verificar senha do .pfx
-- **Certificado expirado:** Renovar com Autoridade Certificadora  
-- **Arquivo corrompido:** Fazer novo download
-- **Chave privada ausente:** Verificar se .pfx está completo
-
-**Documentação completa:** [`TROUBLESHOOTING-CERTIFICADOS.md`](TROUBLESHOOTING-CERTIFICADOS.md)
+- [MOC 7.0 - Manual de Orientação do Contribuinte](https://www.nfe.fazenda.gov.br/portal/listaConteudo.aspx?tipoConteudo=/fBxKhVZPDA=)
+- [NT 2014.002 - Web Service NFeDistribuicaoDFe](https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=wLVBlKchUb4%3D)
+- [Portal Nacional NF-e](https://www.nfe.fazenda.gov.br/)
+- [Schemas XSD Oficiais](https://www.nfe.fazenda.gov.br/portal/listaConteudo.aspx?tipoConteudo=BMPFMBoln3w=)
 
 ---
 
-## 📝 License
+## 📄 **Licença**
 
-Proprietary - Todos os direitos reservados
+Este projeto é privado e proprietário.
 
-## 🤝 Contribuindo
+---
 
-Este é um projeto privado. Para contribuir, entre em contato com o administrador.
-
-## 📧 Suporte
+## 💡 **Suporte**
 
 Para dúvidas ou problemas:
-1. Verificar documentação (arquivos `*.md`)
-2. Verificar logs: `docker logs sefaz-xml-sync`
-3. Consultar troubleshooting nos guias de deployment
-
-## 🎯 Roadmap
-
-- [ ] Notificações por email
-- [ ] Exportação de relatórios (PDF/Excel)
-- [ ] Dashboard com gráficos
-- [ ] Filtros avançados por período
-- [ ] Backup automático para S3/Google Drive
-- [ ] 2FA (Two-Factor Authentication)
-- [ ] API pública (webhooks)
-- [ ] Integração com contabilidade
+1. Verifique os **logs** em `logs/app-YYYY-MM-DD.log`
+2. Consulte a aba **Logs** na interface web
+3. Verifique a documentação oficial da SEFAZ
+4. Ver documentação adicional: `TROUBLESHOOTING-CERTIFICADOS.md`, `DEPLOYMENT.md`
 
 ---
 
-**Desenvolvido com ❤️ para simplificar a gestão de XMLs fiscais**
+**Desenvolvido com conformidade total à legislação fiscal brasileira 🇧🇷**

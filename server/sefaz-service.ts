@@ -274,19 +274,58 @@ export class SefazService {
     }
   }
 
+  /**
+   * Processa e salva documento baseado no schema (nfeProc, resNFe, procEventoNFe, resEvento)
+   * Conforme NT 2014.002 §3.3 e MOC 7.0 §2.2
+   * 
+   * IMPORTANTE: SEFAZ retorna schemas SEM namespace (ex: "resNFe" não "http://...resNFe")
+   */
+  private async processDocument(
+    xmlContent: string,
+    schema: string,
+    empresa: Empresa,
+    sincronizacaoId: string,
+    nsu: string
+  ): Promise<void> {
+    const parsed = this.parser.parse(xmlContent);
+
+    // Schema normalization: SEFAZ retorna apenas nome sem namespace
+    const schemaLower = schema.toLowerCase();
+    
+    if (schemaLower.includes("nfeproc")) {
+      await this.saveNFeProc(parsed, xmlContent, empresa, sincronizacaoId);
+    } else if (schemaLower.includes("resnfe")) {
+      await this.saveResNFe(parsed, xmlContent, empresa, sincronizacaoId, nsu);
+    } else if (schemaLower.includes("proceventonfe")) {
+      await this.saveProcEvento(parsed, xmlContent, empresa, sincronizacaoId, nsu);
+    } else if (schemaLower.includes("resevento")) {
+      await this.saveResEvento(parsed, xmlContent, empresa, sincronizacaoId, nsu);
+    } else {
+      console.warn(`Schema desconhecido: ${schema} - NSU ${nsu}`);
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        sincronizacaoId,
+        nivel: "warning",
+        mensagem: `Schema XML não reconhecido`,
+        detalhes: JSON.stringify({ schema, nsu }),
+      });
+    }
+  }
+
+  /**
+   * Salva XML completo de NF-e/NFC-e (nfeProc)
+   * MOC 7.0 §2.2: Modelo 55 (NF-e) e Modelo 65 (NFC-e)
+   */
   private async saveNFeProc(
+    parsed: any,
     xmlContent: string,
     empresa: Empresa,
     sincronizacaoId: string
   ): Promise<void> {
-    const parsed = this.parser.parse(xmlContent);
     const nfeProc = parsed.nfeProc;
+    if (!nfeProc) throw new Error("XML não é um nfeProc");
 
-    if (!nfeProc) {
-      throw new Error("XML não é um nfeProc");
-    }
-
-    // Extrai informações
     const protNFe = nfeProc.protNFe;
     const NFe = nfeProc.NFe;
     const infNFe = NFe?.infNFe;
@@ -295,40 +334,42 @@ export class SefazService {
     const chNFe = protNFe?.infProt?.chNFe || "";
     const numeroNF = ide?.nNF || "";
     const dhEmi = ide?.dhEmi || ide?.dEmi || new Date().toISOString();
+    const modelo = ide?.mod || "55"; // MOC 7.0 §2.2: 55=NF-e, 65=NFC-e
 
     if (!chNFe || !numeroNF) {
-      throw new Error("Não foi possível extrair chave ou número da NF-e");
+      throw new Error("Não foi possível extrair chave ou número da NF-e/NFC-e");
     }
 
-    // Verifica se já existe
+    // Verifica duplicata
     const existing = await storage.getXmlByChave(chNFe, empresa.userId);
     if (existing) {
       console.log(`XML já existe: ${chNFe}`);
       return;
     }
 
-    // Organiza por CNPJ/Ano/Mês
+    // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/numeroNF.xml
     const dataEmissao = new Date(dhEmi);
     const ano = dataEmissao.getFullYear();
     const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
+    const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
 
-    const destDir = path.join(this.xmlDestPath, empresa.cnpj, `${ano}`, mes);
+    const destDir = path.join(this.xmlDestPath, tipoDoc, empresa.cnpj, `${ano}`, mes);
     await fs.mkdir(destDir, { recursive: true });
 
     const filename = `${parseInt(numeroNF)}.xml`;
     const filepath = path.join(destDir, filename);
 
     await fs.writeFile(filepath, xmlContent, "utf-8");
-
     const stats = await fs.stat(filepath);
 
-    // Salva no storage
     await storage.createXml({
       userId: empresa.userId,
       empresaId: empresa.id,
       sincronizacaoId,
       chaveNFe: chNFe,
       numeroNF: numeroNF.toString(),
+      modelo: modelo.toString(),
+      tipoDocumento: "nfeProc",
       dataEmissao,
       caminhoArquivo: filepath,
       tamanhoBytes: stats.size,
@@ -339,9 +380,221 @@ export class SefazService {
       empresaId: empresa.id,
       sincronizacaoId,
       nivel: "info",
-      mensagem: `XML salvo: NF-e ${numeroNF}`,
-      detalhes: JSON.stringify({ chNFe, filepath }),
+      mensagem: `XML salvo: ${tipoDoc} ${numeroNF}`,
+      detalhes: JSON.stringify({ chNFe, filepath, modelo }),
     });
+  }
+
+  /**
+   * Salva resumo de NF-e/NFC-e (resNFe)
+   * NT 2014.002 §3.3: Quando destinatário não tem direito ao XML completo
+   * 
+   * IMPORTANTE: Modelo é extraído da CHAVE NFe (posições 20-22), NÃO do tpNF!
+   * - tpNF = tipo operação (0=entrada, 1=saída)
+   * - Modelo na chave: posições 20-22 (55=NF-e, 65=NFC-e)
+   */
+  private async saveResNFe(
+    parsed: any,
+    xmlContent: string,
+    empresa: Empresa,
+    sincronizacaoId: string,
+    nsu: string
+  ): Promise<void> {
+    const resNFe = parsed.resNFe;
+    if (!resNFe) throw new Error("XML não é um resNFe");
+
+    const chNFe = resNFe.chNFe || "";
+    const dhEmi = resNFe.dhEmi || new Date().toISOString();
+    
+    if (!chNFe) throw new Error("Não foi possível extrair chave do resNFe");
+
+    // Extrai modelo da chave (posições 20-22): "55" ou "65"
+    // Formato chave: UF(2) + AAMM(6) + CNPJ(14) + MOD(2) + ...
+    const modelo = chNFe.length >= 22 ? chNFe.substring(20, 22) : "55";
+
+    // Verifica duplicata
+    const existing = await storage.getXmlByChave(chNFe, empresa.userId);
+    if (existing) {
+      console.log(`Resumo já existe: ${chNFe}`);
+      return;
+    }
+
+    // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Resumos/CHAVEnsu_NSU.xml
+    const dataEmissao = new Date(dhEmi);
+    const ano = dataEmissao.getFullYear();
+    const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
+    const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
+
+    const destDir = path.join(this.xmlDestPath, tipoDoc, empresa.cnpj, `${ano}`, mes, "Resumos");
+    await fs.mkdir(destDir, { recursive: true });
+
+    const filename = `${chNFe}_nsu${nsu}.xml`;
+    const filepath = path.join(destDir, filename);
+
+    await fs.writeFile(filepath, xmlContent, "utf-8");
+    const stats = await fs.stat(filepath);
+
+    await storage.createXml({
+      userId: empresa.userId,
+      empresaId: empresa.id,
+      sincronizacaoId,
+      chaveNFe: chNFe,
+      numeroNF: chNFe.substring(25, 34), // Extrai número da chave
+      modelo: modelo.toString(),
+      tipoDocumento: "resNFe",
+      dataEmissao,
+      caminhoArquivo: filepath,
+      tamanhoBytes: stats.size,
+    });
+
+    await storage.createLog({
+      userId: empresa.userId,
+      empresaId: empresa.id,
+      sincronizacaoId,
+      nivel: "info",
+      mensagem: `Resumo salvo: ${tipoDoc} (resNFe)`,
+      detalhes: JSON.stringify({ chNFe, filepath, modelo, nsu }),
+    });
+  }
+
+  /**
+   * Salva evento de NF-e/NFC-e (procEventoNFe)
+   * NT 2014.002 §3.3: Cancelamento, CCe, Manifestação, etc
+   */
+  private async saveProcEvento(
+    parsed: any,
+    xmlContent: string,
+    empresa: Empresa,
+    sincronizacaoId: string,
+    nsu: string
+  ): Promise<void> {
+    const procEvento = parsed.procEventoNFe;
+    if (!procEvento) throw new Error("XML não é um procEventoNFe");
+
+    const evento = procEvento.evento;
+    const infEvento = evento?.infEvento;
+    
+    const chNFe = infEvento?.chNFe || "";
+    const tpEvento = infEvento?.tpEvento || "";
+    const dhEvento = infEvento?.dhEvento || new Date().toISOString();
+    const nSeqEvento = infEvento?.nSeqEvento || "1";
+
+    if (!chNFe) throw new Error("Não foi possível extrair chave do procEventoNFe");
+
+    // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Eventos/CHAVE_tpEvento_seq.xml
+    const dataEmissao = new Date(dhEvento);
+    const ano = dataEmissao.getFullYear();
+    const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
+    
+    // Detecta modelo pela chave (posição 20-21)
+    const modelo = chNFe.substring(20, 22) || "55";
+    const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
+
+    const destDir = path.join(this.xmlDestPath, tipoDoc, empresa.cnpj, `${ano}`, mes, "Eventos");
+    await fs.mkdir(destDir, { recursive: true });
+
+    const filename = `${chNFe}_${tpEvento}_seq${nSeqEvento}_nsu${nsu}.xml`;
+    const filepath = path.join(destDir, filename);
+
+    await fs.writeFile(filepath, xmlContent, "utf-8");
+    const stats = await fs.stat(filepath);
+
+    await storage.createXml({
+      userId: empresa.userId,
+      empresaId: empresa.id,
+      sincronizacaoId,
+      chaveNFe: chNFe,
+      numeroNF: chNFe.substring(25, 34), // Extrai número da chave
+      modelo: modelo.toString(),
+      tipoDocumento: "procEventoNFe",
+      dataEmissao,
+      caminhoArquivo: filepath,
+      tamanhoBytes: stats.size,
+    });
+
+    await storage.createLog({
+      userId: empresa.userId,
+      empresaId: empresa.id,
+      sincronizacaoId,
+      nivel: "info",
+      mensagem: `Evento salvo: ${tipoDoc} (${this.getTipoEventoDescricao(tpEvento)})`,
+      detalhes: JSON.stringify({ chNFe, tpEvento, filepath, nsu }),
+    });
+  }
+
+  /**
+   * Salva resumo de evento (resEvento)
+   * NT 2014.002 §3.3
+   */
+  private async saveResEvento(
+    parsed: any,
+    xmlContent: string,
+    empresa: Empresa,
+    sincronizacaoId: string,
+    nsu: string
+  ): Promise<void> {
+    const resEvento = parsed.resEvento;
+    if (!resEvento) throw new Error("XML não é um resEvento");
+
+    const chNFe = resEvento.chNFe || "";
+    const tpEvento = resEvento.tpEvento || "";
+    const dhEvento = resEvento.dhRegEvento || new Date().toISOString();
+
+    if (!chNFe) throw new Error("Não foi possível extrair chave do resEvento");
+
+    // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Eventos/Resumos/CHAVE_tpEvento_nsu.xml
+    const dataEmissao = new Date(dhEvento);
+    const ano = dataEmissao.getFullYear();
+    const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
+    
+    const modelo = chNFe.substring(20, 22) || "55";
+    const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
+
+    const destDir = path.join(this.xmlDestPath, tipoDoc, empresa.cnpj, `${ano}`, mes, "Eventos", "Resumos");
+    await fs.mkdir(destDir, { recursive: true });
+
+    const filename = `${chNFe}_${tpEvento}_nsu${nsu}.xml`;
+    const filepath = path.join(destDir, filename);
+
+    await fs.writeFile(filepath, xmlContent, "utf-8");
+    const stats = await fs.stat(filepath);
+
+    await storage.createXml({
+      userId: empresa.userId,
+      empresaId: empresa.id,
+      sincronizacaoId,
+      chaveNFe: chNFe,
+      numeroNF: chNFe.substring(25, 34),
+      modelo: modelo.toString(),
+      tipoDocumento: "resEvento",
+      dataEmissao,
+      caminhoArquivo: filepath,
+      tamanhoBytes: stats.size,
+    });
+
+    await storage.createLog({
+      userId: empresa.userId,
+      empresaId: empresa.id,
+      sincronizacaoId,
+      nivel: "info",
+      mensagem: `Resumo de evento salvo: ${tipoDoc} (${this.getTipoEventoDescricao(tpEvento)})`,
+      detalhes: JSON.stringify({ chNFe, tpEvento, filepath, nsu }),
+    });
+  }
+
+  /**
+   * Retorna descrição amigável do tipo de evento
+   */
+  private getTipoEventoDescricao(tpEvento: string): string {
+    const tipos: Record<string, string> = {
+      "110110": "Carta de Correção",
+      "110111": "Cancelamento",
+      "210200": "Confirmação da Operação",
+      "210210": "Ciência da Operação",
+      "210220": "Desconhecimento da Operação",
+      "210240": "Operação não Realizada",
+    };
+    return tipos[tpEvento] || `Evento ${tpEvento}`;
   }
 
   async sincronizarEmpresa(empresa: Empresa): Promise<number> {
@@ -500,24 +753,26 @@ export class SefazService {
           alinhamentoCompleto = true; // Marca como completo para sair do loop
           break; // Para o loop IMEDIATAMENTE
         } else if (response.cStat === "138") {
-          // 138: Tem documentos - processa e salva
+          // 138: Tem documentos - processa TODOS os schemas conforme NT 2014.002 §3.3
           for (const docZip of response.docZips || []) {
-            if (docZip.schema.includes("nfeProc")) {
-              try {
-                const xmlContent = this.decompressDocZip(docZip.content);
-                await this.saveNFeProc(xmlContent, empresa, sincronizacao.id);
-                xmlsBaixados++;
-              } catch (error) {
-                console.error("Erro ao processar docZip:", error);
-                await storage.createLog({
-                  userId: empresa.userId,
-                  empresaId: empresa.id,
-                  sincronizacaoId: sincronizacao.id,
-                  nivel: "warning",
-                  mensagem: `Erro ao processar documento NSU ${docZip.NSU}`,
-                  detalhes: JSON.stringify({ error: String(error) }),
-                });
-              }
+            try {
+              const xmlContent = this.decompressDocZip(docZip.content);
+              await this.processDocument(xmlContent, docZip.schema, empresa, sincronizacao.id, docZip.NSU);
+              xmlsBaixados++;
+            } catch (error) {
+              console.error("Erro ao processar docZip:", error);
+              await storage.createLog({
+                userId: empresa.userId,
+                empresaId: empresa.id,
+                sincronizacaoId: sincronizacao.id,
+                nivel: "warning",
+                mensagem: `Erro ao processar documento NSU ${docZip.NSU} (${docZip.schema})`,
+                detalhes: JSON.stringify({ 
+                  error: String(error),
+                  schema: docZip.schema,
+                  nsu: docZip.NSU
+                }),
+              });
             }
           }
 
