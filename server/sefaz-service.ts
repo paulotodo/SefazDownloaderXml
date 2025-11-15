@@ -403,12 +403,25 @@ export class SefazService {
     const resNFe = parsed.resNFe;
     if (!resNFe) throw new Error("XML não é um resNFe");
 
-    // FIX: Garantir que chNFe seja sempre string (pode vir como array ou objeto do parser XML)
+    // FIX: Garantir que chNFe seja sempre string (pode vir como array, objeto ou NÚMERO do parser XML)
     const chNFeRaw = resNFe.chNFe;
-    const chNFe = String(Array.isArray(chNFeRaw) ? chNFeRaw[0] : chNFeRaw || "");
+    let chNFe = "";
+    
+    if (Array.isArray(chNFeRaw)) {
+      chNFe = String(chNFeRaw[0] || "");
+    } else if (typeof chNFeRaw === "number") {
+      // CRÍTICO: Parser XML converte chaves grandes em number (notação científica)
+      chNFe = chNFeRaw.toFixed(0);
+    } else {
+      chNFe = String(chNFeRaw || "");
+    }
+    
     const dhEmi = resNFe.dhEmi || new Date().toISOString();
     
-    if (!chNFe || chNFe.length < 44) throw new Error("Chave de acesso inválida no resNFe");
+    if (!chNFe || chNFe.length < 44) {
+      console.error("[ERRO resNFe] chNFe inválido:", { chNFe, length: chNFe.length, chNFeRaw, tipo: typeof chNFeRaw });
+      throw new Error(`Chave de acesso inválida no resNFe (recebido: "${chNFe}", length: ${chNFe.length})`);
+    }
 
     // Extrai modelo da chave (posições 20-22): "55" ou "65"
     // Formato chave: UF(2) + AAMM(6) + CNPJ(14) + MOD(2) + ...
@@ -476,14 +489,27 @@ export class SefazService {
     const evento = procEvento.evento;
     const infEvento = evento?.infEvento;
     
-    // FIX: Garantir que chNFe seja sempre string (pode vir como array ou objeto do parser XML)
+    // FIX: Garantir que chNFe seja sempre string (pode vir como array, objeto ou NÚMERO do parser XML)
     const chNFeRaw = infEvento?.chNFe;
-    const chNFe = String(Array.isArray(chNFeRaw) ? chNFeRaw[0] : chNFeRaw || "");
+    let chNFe = "";
+    
+    if (Array.isArray(chNFeRaw)) {
+      chNFe = String(chNFeRaw[0] || "");
+    } else if (typeof chNFeRaw === "number") {
+      // CRÍTICO: Parser XML converte chaves grandes em number (notação científica)
+      chNFe = chNFeRaw.toFixed(0);
+    } else {
+      chNFe = String(chNFeRaw || "");
+    }
+    
     const tpEvento = String(infEvento?.tpEvento || "");
     const dhEvento = infEvento?.dhEvento || new Date().toISOString();
     const nSeqEvento = String(infEvento?.nSeqEvento || "1");
 
-    if (!chNFe || chNFe.length < 44) throw new Error("Chave de acesso inválida no procEventoNFe");
+    if (!chNFe || chNFe.length < 44) {
+      console.error("[ERRO procEventoNFe] chNFe inválido:", { chNFe, length: chNFe.length, chNFeRaw, tipo: typeof chNFeRaw });
+      throw new Error(`Chave de acesso inválida no procEventoNFe (recebido: "${chNFe}", length: ${chNFe.length})`);
+    }
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Eventos/CHAVE_tpEvento_seq.xml
     const dataEmissao = new Date(dhEvento);
@@ -540,17 +566,26 @@ export class SefazService {
     const resEvento = parsed.resEvento;
     if (!resEvento) throw new Error("XML não é um resEvento");
 
-    // DEBUG: Ver estrutura completa do resEvento
-    console.log("[DEBUG resEvento]", JSON.stringify(resEvento, null, 2));
-
-    // FIX: Garantir que chNFe seja sempre string (pode vir como array ou objeto do parser XML)
+    // FIX: Garantir que chNFe seja sempre string (pode vir como array, objeto ou NÚMERO do parser XML)
     const chNFeRaw = resEvento.chNFe;
-    const chNFe = String(Array.isArray(chNFeRaw) ? chNFeRaw[0] : chNFeRaw || "");
+    let chNFe = "";
+    
+    if (Array.isArray(chNFeRaw)) {
+      chNFe = String(chNFeRaw[0] || "");
+    } else if (typeof chNFeRaw === "number") {
+      // CRÍTICO: Parser XML converte chaves grandes em number (notação científica)
+      // Exemplo: 42251149531261000107... vira 4.2251149531261e+43
+      // Solução: usar toFixed(0) para preservar TODOS os dígitos
+      chNFe = chNFeRaw.toFixed(0);
+    } else {
+      chNFe = String(chNFeRaw || "");
+    }
+    
     const tpEvento = String(resEvento.tpEvento || "");
     const dhEvento = resEvento.dhEvento || resEvento.dhRecbto || new Date().toISOString();
 
     if (!chNFe || chNFe.length < 44) {
-      console.error("[ERRO resEvento] chNFe inválido:", { chNFe, length: chNFe.length, chNFeRaw });
+      console.error("[ERRO resEvento] chNFe inválido:", { chNFe, length: chNFe.length, chNFeRaw, tipo: typeof chNFeRaw });
       throw new Error(`Chave de acesso inválida no resEvento (recebido: "${chNFe}", length: ${chNFe.length})`);
     }
 
