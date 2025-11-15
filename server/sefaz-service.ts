@@ -610,6 +610,14 @@ export class SefazService {
   }
 
   async sincronizarEmpresa(empresa: Empresa): Promise<number> {
+    // CRÍTICO: Recarregar empresa do banco para pegar valor atualizado de bloqueadoAte
+    // Isso evita usar dados em cache quando o bloqueio já expirou
+    const empresaAtualizada = await storage.getEmpresa(empresa.id, empresa.userId);
+    if (!empresaAtualizada) {
+      throw new Error("Empresa não encontrada");
+    }
+    empresa = empresaAtualizada; // Usa dados frescos do banco
+    
     // Verifica se empresa está bloqueada (cStat 656)
     if (estaBloqueado(empresa.bloqueadoAte)) {
       const tempoRestante = calcularMinutosRestantes(empresa.bloqueadoAte);
@@ -996,6 +1004,13 @@ export class SefazService {
     chamadas: number;
     intervalo: { min: string; max: string };
   }> {
+    // CRÍTICO: Recarregar empresa do banco para pegar valor atualizado de bloqueadoAte
+    const empresaAtualizada = await storage.getEmpresa(empresa.id, empresa.userId);
+    if (!empresaAtualizada) {
+      throw new Error("Empresa não encontrada");
+    }
+    empresa = empresaAtualizada; // Usa dados frescos do banco
+    
     // Verifica se empresa está bloqueada (cStat 656)
     if (estaBloqueado(empresa.bloqueadoAte)) {
       const tempoRestante = calcularMinutosRestantes(empresa.bloqueadoAte);
