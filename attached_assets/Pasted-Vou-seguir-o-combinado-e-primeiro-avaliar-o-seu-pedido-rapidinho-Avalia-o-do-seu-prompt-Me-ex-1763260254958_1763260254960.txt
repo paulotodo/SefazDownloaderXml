@@ -1,0 +1,280 @@
+Vou seguir o combinado e primeiro avaliar o seu pedido rapidinho.
+
+Avaliação do seu prompt
+
+> “Me explique melhor como funciona a TAG distnsu”
+
+
+
+Nota: 9/10
+
+Pontos fortes: direto, focado no ponto crítico da integração (distNSU dentro do NFeDistribuicaoDFe).
+
+Pra virar 10/10: poderia ter especificado “no WebService NFeDistribuicaoDFe de acordo com a NT 2014.002”, mas o contexto já estava claro da conversa.
+
+
+Como a nota é ≥ 8, vou executar e explicar em detalhes como a distNSU funciona.
+
+
+---
+
+1. Onde entra a distNSU no jogo
+
+No WebService NFeDistribuicaoDFe, o XML de requisição (distDFeInt) aceita três modos de consulta, definidos pela tag interna: 
+
+distNSU
+
+consNSU
+
+consChNFe
+
+
+A distNSU é o modo pensado para varrer a fila de documentos (DF-e) de interesse de um CNPJ/CPF, em lote, a partir de um NSU (Número Sequencial Único).
+
+> Resumão:
+distNSU = “me manda o próximo bloco de documentos a partir do último NSU que eu já tenho”. 
+
+
+
+
+---
+
+2. O que é NSU e como o Ambiente Nacional usa isso
+
+O NSU (Número Sequencial Único) é um número crescente, gerado pelo Ambiente Nacional por ator interessado (CNPJ base ou CPF). Cada DF-e (nota, resumo, evento) relevante pra você recebe um NSU nessa fila. 
+
+Características importantes:
+
+Cada interessado (CNPJ base/CPF) tem sua própria sequência de NSU.
+
+A ideia é que a sequência não tenha buracos (se aparecer “buraco”, você trata com consNSU pra conferir). 
+
+O NSU é gerado de forma assíncrona após a autorização dos documentos, então a fila não é “tempo real”, mas converge. 
+
+
+
+---
+
+3. O que exatamente faz a distNSU
+
+Na documentação oficial, a distNSU é descrita como: 
+
+> “Distribuição de conjunto de DF-e a partir do NSU informado”
+
+
+
+Traduzindo isso pra fluxo prático:
+
+1. Você manda um pedido com a tag distNSU informando:
+
+o CNPJ/CPF interessado (seu CNPJ base, normalmente), e
+
+o ultNSU que você já possui (último NSU processado no seu sistema).
+
+
+
+2. O Ambiente Nacional monta um lote de até 50 documentos cujo NSU seja maior que o ultNSU informado, respeitando as regras de janela (até ~90 dias, etc.). 
+
+
+3. A resposta (retDistDFeInt) vem com, entre outros campos:
+
+cStat – código do resultado (ex.: 137, 138, 656 etc.). 
+
+ultNSU – último NSU efetivamente entregue nesta resposta.
+
+maxNSU – maior NSU existente na base do Ambiente Nacional naquele momento para você.
+
+
+
+4. Os documentos vêm em elementos <docZip>, cada um: 
+
+zipado (GZip)
+
+e codificado em Base64
+
+
+Depois de descompactar, o conteúdo pode ser:
+
+um resumo de NF-e (resNFe),
+
+uma NF-e completa (procNFe) – se você já manifestou, etc.,
+
+resumo de evento ou o evento completo,
+
+e, na prática, isso pode incluir NF-e, NFC-e, CT-e etc., dependendo da tabela de DF-e e do que você pediu. 
+
+
+
+
+
+---
+
+4. Como o fluxo deve funcionar no seu sistema
+
+Em termos de algoritmo, o ciclo normal com distNSU é assim:
+
+1. Ler do seu banco:
+
+ultNSU_local = último NSU que você já processou e salvou.
+
+Se não tiver nenhum ainda, você manda ultNSU = 0 (ou um NSU antigo) e a Sefaz vai devolver documentos recentes (típico “primeira carga” de até 3 meses). 
+
+
+
+2. Montar o XML de requisição (distDFeInt) com:
+
+tpAmb (1 = produção / 2 = homologação),
+
+CNPJ ou CPF,
+
+<distNSU><ultNSU>VALOR</ultNSU></distNSU>.
+
+
+
+3. Enviar pro NFeDistribuicaoDFe e receber o retDistDFeInt.
+
+
+4. Analisar o retorno:
+
+Se cStat = 138 (Documento localizado): vieram documentos. 
+
+Descompactar cada docZip,
+
+Identificar tipo (resumo, NF-e completa, evento, etc.),
+
+Armazenar (por ex.: pastas por ano/mês/modelo 55/65 + chave),
+
+Atualizar seu ultNSU_local com o valor de ultNSU retornado.
+
+
+Se cStat = 137 (Nenhum documento localizado):
+
+Significa que, para aquele CNPJ base, não há mais documentos a distribuir naquele momento (ou você é novo no serviço / ficou mais de 60 dias sem consultar). 
+
+Se ultNSU == maxNSU, você está “no fim da fila” – aí entra a regra de consumo indevido (aguardar 1h pra próxima tentativa se continuar recebendo 137). 
+
+
+Se cStat = 656 (Consumo indevido):
+
+Você desrespeitou alguma regra de uso (ex.: ficar insistindo com distNSU quando não há mais documentos pra distribuir, ou consultas excessivas fora das janelas).
+
+O CNPJ fica bloqueado por 1h para aquele serviço. 
+
+
+
+
+5. Loop controlado
+
+Enquanto ultNSU_local < maxNSU e ainda vierem documentos (cStat = 138 + lista de docZip não vazia), você pode chamar distNSU de novo dentro do mesmo ciclo (mas com bom senso de intervalo).
+
+Quando ultNSU_local >= maxNSU ou cStat = 137, você para o loop e agenda a próxima execução (por exemplo, daqui 1h). 
+
+
+
+
+
+---
+
+5. distNSU x consNSU x consChNFe
+
+Pra deixar bem claro:
+
+distNSU
+
+Para sincronização contínua (“puxa tudo o que eu ainda não tenho”).
+
+Retorna lote de até 50 documentos por chamada. 
+
+Não tem o limite numérico de 20/h, mas tem as regras de consumo indevido quando você insiste sem ter mais documentos (137 → tem que esperar 1h). 
+
+
+consNSU
+
+Consulta pontual de um NSU específico “faltando” na sua base.
+
+Tem limite de 20 consultas por hora (se passar, 656). 
+
+
+consChNFe
+
+Consulta pontual por chave de acesso.
+
+Também limitada a 20/h, mesma lógica de consumo indevido. 
+
+
+
+Na prática do teu robô:
+
+distNSU = o motor principal que roda em job (e também quando você disparar manualmente) pra varrer tudo.
+
+consNSU / consChNFe você usa só em exceções, quando achar “buraco” ou precisar resolver um caso específico.
+
+
+
+---
+
+6. Coisas avançadas que impactam a tua estratégia
+
+Da versão 1.10 em diante da NT 2014.002, tem mais algumas regras importantes pro distNSU: 
+
+A geração de NSU só considera quem usou o serviço nos últimos 60 dias.
+
+Para novos usuários (nunca usaram distNSU):
+
+os NSUs passam a ser gerados a partir do primeiro acesso,
+
+não há geração retroativa (você não vai “puxar o passado infinito”).
+
+
+Quem ficar >60 dias sem consultar tem a geração de NSU interrompida e retomada a partir do próximo acesso (sem retroativo).
+
+Nestes casos, o primeiro retorno costuma ser cStat = 137 - Nenhum documento localizado, e só nas próximas horas é que começa a aparecer documento.
+
+
+Isso tudo influencia bastante a tua expectativa na primeira carga e no comportamento de empresas que usam/param/voltam a usar a distribuição.
+
+
+---
+
+7. Resumindo em “modo implementação”
+
+Se eu tivesse que resumir pra você implementar:
+
+1. Tabela de controle (controle_nsu)
+
+cnpj_base, ult_nsu, max_nsu, dt_ultima_consulta, dt_ultimo_137, etc.
+
+
+
+2. Função consultar_distnsu(cnpj_base)
+
+Lê ult_nsu local
+
+Monta XML com distNSU + ultNSU
+
+Chama NFeDistribuicaoDFe
+
+Atualiza ult_nsu/max_nsu
+
+Descompacta e salva docZip
+
+Retorna cStat + quantidade de docs.
+
+
+
+3. Job
+
+Se recebeu 137 recentemente, respeita o “espera 1h”.
+
+Se ult_nsu < max_nsu, pode repetir algumas chamadas até consumir o lote, com intervalo curto.
+
+Sempre logando tudo.
+
+
+
+
+Se você quiser, no próximo passo eu posso te montar:
+
+um fluxo passo-a-passo só para distNSU com pseudo-código,
+
+ou já um esqueleto em Python ou Node só do módulo distNSU, com parsing de retDistDFeInt e controle de NSU.
