@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Building2, Plus, Pencil, Trash2, Search, Play, RefreshCw } from "lucide-react";
+import { Building2, Plus, Pencil, Trash2, Search, Play, RefreshCw, Filter } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -13,9 +13,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/status-badge";
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,6 +53,11 @@ interface Empresa {
 export default function Empresas() {
   const [searchTerm, setSearchTerm] = useState("");
   const [reconcilandoId, setReconcilandoId] = useState<string | null>(null);
+  const [buscaAvancadaOpen, setBuscaAvancadaOpen] = useState(false);
+  const [empresaSelecionada, setEmpresaSelecionada] = useState<Empresa | null>(null);
+  const [nsuInicial, setNsuInicial] = useState("");
+  const [nsuFinal, setNsuFinal] = useState("");
+  const [maxConsultas, setMaxConsultas] = useState("20");
   const { toast } = useToast();
 
   const { data: empresas, isLoading } = useQuery<Empresa[]>({
@@ -107,6 +122,48 @@ export default function Empresas() {
       setReconcilandoId(null);
       toast({
         title: "Erro ao reconciliar NSU",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const buscarPorPeriodoMutation = useMutation({
+    mutationFn: ({ id, nsuInicial, nsuFinal, maxConsultas }: {
+      id: string;
+      nsuInicial: string;
+      nsuFinal: string;
+      maxConsultas: number;
+    }) => {
+      return apiRequest<{
+        success: boolean;
+        xmlsEncontrados: number;
+        consultasRealizadas: number;
+        nsuConsultados: string[];
+      }>(`/api/empresas/${id}/buscar-periodo`, {
+        method: "POST",
+        body: JSON.stringify({ nsuInicial, nsuFinal, maxConsultas }),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    onSuccess: (data) => {
+      setBuscaAvancadaOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/xmls"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/logs"] });
+      toast({
+        title: "Busca avançada concluída",
+        description: `${data.xmlsEncontrados} XML(s) encontrado(s) em ${data.consultasRealizadas} consulta(s)`,
+      });
+      
+      // Limpa formulário
+      setNsuInicial("");
+      setNsuFinal("");
+      setMaxConsultas("20");
+      setEmpresaSelecionada(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro na busca avançada",
         description: error.message,
         variant: "destructive",
       });
@@ -253,6 +310,18 @@ export default function Empresas() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            onClick={() => {
+                              setEmpresaSelecionada(empresa);
+                              setBuscaAvancadaOpen(true);
+                            }}
+                            title="Busca avançada por período (máx 20 consultas/hora)"
+                            data-testid={`button-busca-avancada-${empresa.id}`}
+                          >
+                            <Filter className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => sincronizarMutation.mutate(empresa.id)}
                             disabled={sincronizarMutation.isPending}
                             title="Sincronizar agora (baixa XMLs)"
@@ -317,6 +386,168 @@ export default function Empresas() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={buscaAvancadaOpen} onOpenChange={setBuscaAvancadaOpen}>
+        <DialogContent data-testid="dialog-busca-avancada">
+          <DialogHeader>
+            <DialogTitle>Busca Avançada por Período</DialogTitle>
+            <DialogDescription>
+              Busque XMLs específicos em um intervalo de NSU. Limite: <strong>20 consultas por hora</strong> (NT 2014.002)
+            </DialogDescription>
+          </DialogHeader>
+
+          {empresaSelecionada && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Empresa</Label>
+                <div className="text-sm text-muted-foreground">
+                  {empresaSelecionada.razaoSocial} - {formatCNPJ(empresaSelecionada.cnpj)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Último NSU: <span className="font-mono">{empresaSelecionada.ultimoNSU}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="nsu-inicial">NSU Inicial</Label>
+                  <Input
+                    id="nsu-inicial"
+                    placeholder="Ex: 131950"
+                    value={nsuInicial}
+                    onChange={(e) => setNsuInicial(e.target.value)}
+                    data-testid="input-nsu-inicial"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="nsu-final">NSU Final</Label>
+                  <Input
+                    id="nsu-final"
+                    placeholder="Ex: 131960"
+                    value={nsuFinal}
+                    onChange={(e) => setNsuFinal(e.target.value)}
+                    data-testid="input-nsu-final"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="max-consultas">Máximo de Consultas</Label>
+                <Input
+                  id="max-consultas"
+                  type="number"
+                  min="1"
+                  max="20"
+                  placeholder="Máx: 20"
+                  value={maxConsultas}
+                  onChange={(e) => setMaxConsultas(e.target.value)}
+                  data-testid="input-max-consultas"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Limite de 20 consultas por hora por empresa (SEFAZ)
+                </p>
+              </div>
+
+              <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-3 border border-amber-200 dark:border-amber-900">
+                <p className="text-xs text-amber-800 dark:text-amber-200">
+                  <strong>Atenção:</strong> Cada NSU no intervalo conta como 1 consulta.
+                  O intervalo {nsuInicial && nsuFinal ? `(${nsuFinal} - ${nsuInicial} = ${parseInt(nsuFinal || "0") - parseInt(nsuInicial || "0") + 1})` : ""} não pode exceder {maxConsultas} NSUs.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBuscaAvancadaOpen(false);
+                setNsuInicial("");
+                setNsuFinal("");
+                setMaxConsultas("20");
+                setEmpresaSelecionada(null);
+              }}
+              data-testid="button-cancel-busca"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (!empresaSelecionada) return;
+                
+                // Validação NSU inicial e final
+                const nsuInicialTrim = nsuInicial.trim();
+                const nsuFinalTrim = nsuFinal.trim();
+                
+                if (!nsuInicialTrim || !nsuFinalTrim) {
+                  toast({
+                    title: "Campos obrigatórios",
+                    description: "Preencha NSU inicial e NSU final",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                // Validação numérica
+                const nsuInicialNum = parseInt(nsuInicialTrim);
+                const nsuFinalNum = parseInt(nsuFinalTrim);
+                
+                if (isNaN(nsuInicialNum) || isNaN(nsuFinalNum)) {
+                  toast({
+                    title: "NSU inválido",
+                    description: "NSU deve ser um número válido",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                if (nsuInicialNum >= nsuFinalNum) {
+                  toast({
+                    title: "Intervalo inválido",
+                    description: "NSU inicial deve ser menor que NSU final",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                // Validação maxConsultas
+                const consultas = parseInt(maxConsultas);
+                if (isNaN(consultas) || consultas < 1 || consultas > 20) {
+                  toast({
+                    title: "Limite inválido",
+                    description: "Máximo de consultas deve estar entre 1 e 20",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                // Validação de intervalo vs maxConsultas
+                const totalNSUs = nsuFinalNum - nsuInicialNum + 1;
+                if (totalNSUs > consultas) {
+                  toast({
+                    title: "Intervalo muito grande",
+                    description: `Intervalo de ${totalNSUs} NSUs excede o limite de ${consultas} consultas`,
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                buscarPorPeriodoMutation.mutate({
+                  id: empresaSelecionada.id,
+                  nsuInicial: nsuInicialTrim,
+                  nsuFinal: nsuFinalTrim,
+                  maxConsultas: consultas,
+                });
+              }}
+              disabled={buscarPorPeriodoMutation.isPending}
+              data-testid="button-executar-busca"
+            >
+              {buscarPorPeriodoMutation.isPending ? "Buscando..." : "Buscar XMLs"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

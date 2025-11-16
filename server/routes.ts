@@ -331,6 +331,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/empresas/:id/buscar-periodo", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const empresa = await storage.getEmpresa(req.params.id, userId);
+      
+      if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+      }
+
+      // Validação com Zod (coerção automática de tipos)
+      const schema = z.object({
+        nsuInicial: z.string().trim().regex(/^[0-9]{1,15}$/, "NSU inicial deve conter apenas números (máx 15 dígitos)"),
+        nsuFinal: z.string().trim().regex(/^[0-9]{1,15}$/, "NSU final deve conter apenas números (máx 15 dígitos)"),
+        maxConsultas: z.coerce.number().int().min(1).max(20).default(20),
+      });
+
+      const validationResult = schema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Dados inválidos", 
+          details: validationResult.error.errors 
+        });
+      }
+
+      const { nsuInicial, nsuFinal, maxConsultas } = validationResult.data;
+
+      // Executa busca por período (limite de 20 é garantido pela validação Zod)
+      const resultado = await sefazService.buscarPorPeriodo(
+        empresa,
+        nsuInicial,
+        nsuFinal,
+        maxConsultas
+      );
+      
+      res.json({
+        success: true,
+        xmlsEncontrados: resultado.xmlsEncontrados,
+        consultasRealizadas: resultado.consultasRealizadas,
+        nsuConsultados: resultado.nsuConsultados,
+      });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
 
   // ========== XMLs ========== (protegidos)
   app.get("/api/xmls", authenticateUser, async (req, res) => {

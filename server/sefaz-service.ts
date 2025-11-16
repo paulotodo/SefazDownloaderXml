@@ -1410,6 +1410,211 @@ export class SefazService {
       throw error;
     }
   }
+
+  /**
+   * Busca avançada de XMLs por período usando consNSU
+   * NT 2014.002: LIMITADO a 20 consultas por hora por CNPJ
+   * 
+   * @param empresa - Empresa para buscar
+   * @param nsuInicial - NSU inicial do intervalo
+   * @param nsuFinal - NSU final do intervalo
+   * @param maxConsultas - Limite de consultas (máx 20)
+   * @returns Estatísticas da busca
+   */
+  async buscarPorPeriodo(
+    empresa: Empresa,
+    nsuInicial: string,
+    nsuFinal: string,
+    maxConsultas: number = 20
+  ): Promise<{
+    xmlsEncontrados: number;
+    consultasRealizadas: number;
+    nsuConsultados: string[];
+  }> {
+    // Validação: máximo 20 consultas/hora conforme NT 2014.002
+    if (maxConsultas > 20) {
+      throw new Error("Limite máximo de 20 consultas por hora (NT 2014.002)");
+    }
+
+    const nsuInicialNum = parseInt(nsuInicial);
+    const nsuFinalNum = parseInt(nsuFinal);
+
+    if (nsuInicialNum >= nsuFinalNum) {
+      throw new Error("NSU inicial deve ser menor que NSU final");
+    }
+
+    const totalNSUs = nsuFinalNum - nsuInicialNum + 1;
+    if (totalNSUs > maxConsultas) {
+      throw new Error(`Intervalo muito grande: ${totalNSUs} NSUs. Máximo permitido: ${maxConsultas} consultas.`);
+    }
+
+    await storage.createLog({
+      userId: empresa.userId,
+      empresaId: empresa.id,
+      sincronizacaoId: null,
+      nivel: "info",
+      mensagem: `Iniciando busca avançada por período`,
+      detalhes: JSON.stringify({
+        nsuInicial,
+        nsuFinal,
+        totalNSUs,
+        maxConsultas,
+        observacao: "Busca pontual usando consNSU (limite 20/hora)"
+      }),
+    });
+
+    let xmlsEncontrados = 0;
+    let consultasRealizadas = 0;
+    const nsuConsultados: string[] = [];
+
+    try {
+      // Loop por cada NSU no intervalo
+      for (let nsu = nsuInicialNum; nsu <= nsuFinalNum && consultasRealizadas < maxConsultas; nsu++) {
+        const nsuStr = nsu.toString().padStart(15, "0");
+        
+        // Monta envelope consNSU para consulta pontual
+        const envelope = this.buildSOAPEnvelope(
+          empresa.cnpj,
+          empresa.uf,
+          empresa.ambiente,
+          nsuStr
+        );
+
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId: null,
+          nivel: "info",
+          mensagem: `Busca avançada - Consultando NSU ${nsuStr}`,
+          detalhes: JSON.stringify({
+            nsu: nsuStr,
+            consulta: consultasRealizadas + 1,
+            total: maxConsultas
+          }),
+        });
+
+        let responseXml: string;
+        try {
+          responseXml = await this.callDistDFe(empresa, envelope);
+          consultasRealizadas++;
+          nsuConsultados.push(nsuStr);
+        } catch (error) {
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: null,
+            nivel: "error",
+            mensagem: `Busca avançada - Erro ao consultar NSU ${nsuStr}`,
+            detalhes: JSON.stringify({
+              error: String(error),
+              nsu: nsuStr
+            }),
+          });
+          
+          // Incrementa contador mesmo em erro
+          consultasRealizadas++;
+          nsuConsultados.push(nsuStr);
+          continue;
+        }
+
+        const response = this.parseSOAPResponse(responseXml);
+
+        if (response.cStat === "138") {
+          // Documento encontrado - processa
+          for (const docZip of response.docZips || []) {
+            try {
+              const xmlContent = this.decompressDocZip(docZip.content);
+              await this.processDocument(xmlContent, docZip.schema, empresa, null as any, docZip.NSU);
+              xmlsEncontrados++;
+              
+              await storage.createLog({
+                userId: empresa.userId,
+                empresaId: empresa.id,
+                sincronizacaoId: null,
+                nivel: "info",
+                mensagem: `Busca avançada - XML encontrado no NSU ${nsuStr}`,
+                detalhes: JSON.stringify({
+                  nsu: nsuStr,
+                  schema: docZip.schema
+                }),
+              });
+            } catch (error) {
+              await storage.createLog({
+                userId: empresa.userId,
+                empresaId: empresa.id,
+                sincronizacaoId: null,
+                nivel: "warning",
+                mensagem: `Busca avançada - Erro ao processar documento NSU ${nsuStr}`,
+                detalhes: JSON.stringify({
+                  error: String(error),
+                  schema: docZip.schema,
+                  nsu: nsuStr
+                }),
+              });
+            }
+          }
+        } else if (response.cStat === "656") {
+          // Limite de consultas atingido - para imediatamente
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: null,
+            nivel: "warning",
+            mensagem: `Busca avançada - Limite de consultas atingido (cStat 656)`,
+            detalhes: JSON.stringify({
+              nsu: nsuStr,
+              consultasRealizadas,
+              xMotivo: response.xMotivo,
+              observacao: "Aguarde 1 hora para novas consultas"
+            }),
+          });
+          break;
+        }
+
+        // Delay entre consultas (respeito à SEFAZ)
+        if (nsu < nsuFinalNum && consultasRealizadas < maxConsultas) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 segundos
+        }
+      }
+
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        sincronizacaoId: null,
+        nivel: "info",
+        mensagem: `Busca avançada concluída`,
+        detalhes: JSON.stringify({
+          nsuInicial,
+          nsuFinal,
+          consultasRealizadas,
+          xmlsEncontrados,
+          nsuConsultados
+        }),
+      });
+
+      return {
+        xmlsEncontrados,
+        consultasRealizadas,
+        nsuConsultados
+      };
+
+    } catch (error) {
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        sincronizacaoId: null,
+        nivel: "error",
+        mensagem: `Erro na busca avançada: ${String(error)}`,
+        detalhes: JSON.stringify({
+          error: String(error),
+          consultasRealizadas,
+          xmlsEncontrados
+        }),
+      });
+
+      throw error;
+    }
+  }
 }
 
 export const sefazService = new SefazService();

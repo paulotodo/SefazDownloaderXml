@@ -36,11 +36,12 @@ The application uses a modern full-stack approach:
 
 ### Feature Specifications
 -   **Multi-tenant Support**: Data isolation per user via RLS.
--   **Automated Synchronization**: Hourly fetching of XMLs from SEFAZ.
+-   **Automated Synchronization**: Hourly fetching of XMLs from SEFAZ using `distNSU` (batch mode, up to 50 docs/call).
+-   **Advanced Search by Period**: Manual search for specific NSUs using `consNSU` with 20 queries/hour limit (NT 2014.002).
 -   **Certificate Management**: Secure upload, storage, and validation of `.pfx` digital certificates, including expiration checks.
 -   **NSU Reconciliation**: Automatic discovery and alignment of the last NSU (Número Sequencial Único) with SEFAZ, adhering strictly to NT 2014.002 to prevent cStat=656 errors.
 -   **Comprehensive Logging**: Detailed logs for all synchronization activities, filterable by level.
--   **API Endpoints**: Dedicated routes for dashboard metrics, company management (CRUD), XML access, logs, and manual synchronization triggers.
+-   **API Endpoints**: Dedicated routes for dashboard metrics, company management (CRUD), XML access, logs, manual synchronization triggers, and advanced period search.
 -   **Automated Blocking**: Implements a persistent blocking mechanism for companies that trigger cStat=137 or cStat=656, preventing repeated queries until the cooldown period expires, as per SEFAZ guidelines (60 or 65 minutes).
 
 ### System Design Choices
