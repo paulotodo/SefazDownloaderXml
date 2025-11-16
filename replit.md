@@ -3,6 +3,19 @@
 ## Overview
 This web application automates the download of XMLs (nfeProc) from SEFAZ, offering hourly synchronization for multiple registered companies. It provides a robust, multi-tenant solution for managing fiscal documents, aiming to streamline compliance and data access for businesses. The project integrates a modern web stack with secure authentication and a reliable system for interacting with government services, promising efficiency and reduced manual effort in fiscal document management.
 
+## Recent Critical Fixes (November 16, 2025)
+### 3. Download de XMLs Implementado
+- **Problem**: Botão de download na interface não tinha função onClick conectada
+- **Solution**: Implementado onClick que redireciona para `/api/xmls/:id/download`
+- **Files**: `client/src/pages/xmls.tsx`
+
+### 4. Filesystem Local (Não Persistente)
+- **Status**: XMLs salvos em `./xmls/` (filesystem local)
+- **Limitação**: Arquivos são perdidos quando servidor reinicia no Replit
+- **Schemas Recebidos**: Sistema está recebendo principalmente `resEvento` (resumos de eventos), não `nfeProc` (XMLs completos)
+- **Razão**: CNPJs configurados não são emitentes/destinatários diretos, apenas recebem notificações de eventos
+- **Próximo Passo**: Migrar para Supabase Storage para persistência
+
 ## Recent Critical Fixes (November 15, 2025)
 ### 1. XML Parser Configuration (chNFe Precision Loss)
 - **Problem**: Parser was converting 44-digit chNFe to `number`, causing precision loss (e.g., `42251149531261...` → `4.2251149531261e+43`)

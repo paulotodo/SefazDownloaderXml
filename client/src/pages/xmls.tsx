@@ -287,6 +287,9 @@ export default function Xmls() {
                                               variant="ghost"
                                               size="icon"
                                               className="flex-shrink-0"
+                                              onClick={() => {
+                                                window.location.href = `/api/xmls/${xml.id}/download`;
+                                              }}
                                               data-testid={`button-download-${xml.id}`}
                                             >
                                               <Download className="w-4 h-4" />
