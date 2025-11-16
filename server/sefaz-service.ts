@@ -267,11 +267,23 @@ export class SefazService {
   private decompressDocZip(base64Content: string): string {
     try {
       const buffer = Buffer.from(base64Content, "base64");
-      const decompressed = pako.ungzip(buffer, { to: "string" });
-      return decompressed;
+      console.log(`[Descompressão] Base64 → Buffer: ${buffer.length} bytes`);
+      
+      // CRÍTICO: pako.ungzip retorna Uint8Array, precisamos converter para string
+      const decompressed = pako.ungzip(buffer);
+      const xmlString = Buffer.from(decompressed).toString("utf-8");
+      
+      console.log(`[Descompressão] GZIP → XML: ${xmlString.length} caracteres`);
+      console.log(`[Descompressão] Primeiros 100 chars: ${xmlString.substring(0, 100)}`);
+      
+      return xmlString;
     } catch (error) {
+      console.warn(`[Descompressão] ERRO pako.ungzip: ${error} - tentando decode base64 direto`);
       // Se falhar descompactação, talvez já esteja descompactado
-      return Buffer.from(base64Content, "base64").toString("utf-8");
+      const decoded = Buffer.from(base64Content, "base64").toString("utf-8");
+      console.log(`[Descompressão] Base64 direto: ${decoded.length} caracteres`);
+      console.log(`[Descompressão] Primeiros 100 chars: ${decoded.substring(0, 100)}`);
+      return decoded;
     }
   }
 
@@ -360,8 +372,15 @@ export class SefazService {
     const filename = `${parseInt(numeroNF)}.xml`;
     const filepath = path.join(destDir, filename);
 
+    console.log(`[Salvamento] Salvando XML: ${filepath}`);
+    console.log(`[Salvamento] Tamanho do conteúdo: ${xmlContent.length} caracteres`);
+    console.log(`[Salvamento] Primeiros 200 chars: ${xmlContent.substring(0, 200)}`);
+    console.log(`[Salvamento] Últimos 100 chars: ${xmlContent.substring(xmlContent.length - 100)}`);
+    
     await fs.writeFile(filepath, xmlContent, "utf-8");
     const stats = await fs.stat(filepath);
+    
+    console.log(`[Salvamento] Arquivo salvo: ${stats.size} bytes`);
 
     await storage.createXml({
       userId: empresa.userId,
@@ -382,7 +401,13 @@ export class SefazService {
       sincronizacaoId,
       nivel: "info",
       mensagem: `XML salvo: ${tipoDoc} ${numeroNF}`,
-      detalhes: JSON.stringify({ chNFe, filepath, modelo }),
+      detalhes: JSON.stringify({ 
+        chNFe, 
+        filepath, 
+        modelo,
+        tamanhoBytes: stats.size,
+        tamanhoConteudo: xmlContent.length
+      }),
     });
   }
 
