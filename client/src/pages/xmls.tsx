@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { FileText, Download, Search, FolderOpen, ChevronRight, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 import {
   Collapsible,
   CollapsibleContent,
@@ -18,6 +19,8 @@ interface Xml {
   empresaNome: string;
   chaveNFe: string;
   numeroNF: string;
+  modelo: string;
+  tipoDocumento: string;
   dataEmissao: string;
   caminhoArquivo: string;
   tamanhoBytes: number;
@@ -37,6 +40,7 @@ interface XmlGroup {
 }
 
 export default function Xmls() {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [openCNPJs, setOpenCNPJs] = useState<Set<string>>(new Set());
   const [openYears, setOpenYears] = useState<Set<string>>(new Set());
@@ -46,12 +50,14 @@ export default function Xmls() {
     queryKey: ["/api/xmls"],
   });
 
-  const filteredXmls = xmls?.filter((xml) =>
-    xml.numeroNF.includes(searchTerm) ||
-    xml.chaveNFe.includes(searchTerm) ||
-    xml.empresaNome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    xml.empresaCnpj.includes(searchTerm)
-  );
+  const filteredXmls = xmls
+    ?.filter((xml) => xml.tipoDocumento === "nfeProc") // Apenas XMLs completos
+    ?.filter((xml) =>
+      xml.numeroNF.includes(searchTerm) ||
+      xml.chaveNFe.includes(searchTerm) ||
+      xml.empresaNome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      xml.empresaCnpj.includes(searchTerm)
+    );
 
   // Agrupar XMLs por CNPJ > Ano > Mês
   const groupedXmls: XmlGroup[] = [];
@@ -287,8 +293,45 @@ export default function Xmls() {
                                               variant="ghost"
                                               size="icon"
                                               className="flex-shrink-0"
-                                              onClick={() => {
-                                                window.location.href = `/api/xmls/${xml.id}/download`;
+                                              onClick={async () => {
+                                                try {
+                                                  const sessionStr = localStorage.getItem("session");
+                                                  if (!sessionStr) {
+                                                    toast({
+                                                      title: "Erro",
+                                                      description: "Sessão expirada. Faça login novamente.",
+                                                      variant: "destructive",
+                                                    });
+                                                    return;
+                                                  }
+
+                                                  const session = JSON.parse(sessionStr);
+                                                  const response = await fetch(`/api/xmls/${xml.id}/download`, {
+                                                    headers: {
+                                                      Authorization: `Bearer ${session.accessToken}`,
+                                                    },
+                                                  });
+
+                                                  if (!response.ok) {
+                                                    throw new Error("Erro ao baixar XML");
+                                                  }
+
+                                                  const blob = await response.blob();
+                                                  const url = window.URL.createObjectURL(blob);
+                                                  const a = document.createElement("a");
+                                                  a.href = url;
+                                                  a.download = `${xml.numeroNF}.xml`;
+                                                  document.body.appendChild(a);
+                                                  a.click();
+                                                  window.URL.revokeObjectURL(url);
+                                                  document.body.removeChild(a);
+                                                } catch (error) {
+                                                  toast({
+                                                    title: "Erro ao baixar",
+                                                    description: String(error),
+                                                    variant: "destructive",
+                                                  });
+                                                }
                                               }}
                                               data-testid={`button-download-${xml.id}`}
                                             >

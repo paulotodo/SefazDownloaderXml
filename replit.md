@@ -4,12 +4,19 @@
 This web application automates the download of XMLs (nfeProc) from SEFAZ, offering hourly synchronization for multiple registered companies. It provides a robust, multi-tenant solution for managing fiscal documents, aiming to streamline compliance and data access for businesses. The project integrates a modern web stack with secure authentication and a reliable system for interacting with government services, promising efficiency and reduced manual effort in fiscal document management.
 
 ## Recent Critical Fixes (November 16, 2025)
-### 3. Download de XMLs Implementado
-- **Problem**: Botão de download na interface não tinha função onClick conectada
-- **Solution**: Implementado onClick que redireciona para `/api/xmls/:id/download`
+### 3. Download de XMLs Implementado (Autenticado)
+- **Problem**: Botão de download não tinha função onClick e window.location.href não envia headers de autenticação
+- **Solution**: Implementado download via fetch com token Bearer, criando blob para download automático
+- **Behavior**: Download funciona com autenticação JWT, nome do arquivo = numeroNF.xml
 - **Files**: `client/src/pages/xmls.tsx`
 
-### 4. Filesystem Local (Não Persistente)
+### 4. Filtro de XMLs Completos (nfeProc)
+- **Problem**: Interface mostrava todos os tipos de documento (nfeProc, resNFe, resEvento, procEventoNFe)
+- **Solution**: Filtro automático para exibir apenas `tipoDocumento === "nfeProc"` (XMLs completos)
+- **Behavior**: Apenas XMLs completos aparecem na listagem. Resumos (resEvento, resNFe) são salvos no banco mas não exibidos
+- **Files**: `client/src/pages/xmls.tsx`
+
+### 5. Filesystem Local (Não Persistente)
 - **Status**: XMLs salvos em `./xmls/` (filesystem local)
 - **Limitação**: Arquivos são perdidos quando servidor reinicia no Replit
 - **Schemas Recebidos**: Sistema está recebendo principalmente `resEvento` (resumos de eventos), não `nfeProc` (XMLs completos)
