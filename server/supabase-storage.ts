@@ -55,6 +55,8 @@ function parseXml(raw: any): Xml {
     sincronizacaoId: raw.sincronizacao_id,
     chaveNFe: raw.chave_nfe,
     numeroNF: raw.numero_nf,
+    modelo: raw.modelo,
+    tipoDocumento: raw.tipo_documento,
     dataEmissao: raw.data_emissao,
     caminhoArquivo: raw.caminho_arquivo,
     tamanhoBytes: raw.tamanho_bytes,
@@ -384,6 +386,8 @@ export class SupabaseStorage implements IStorage {
         sincronizacao_id: xml.sincronizacaoId || null,
         chave_nfe: xml.chaveNFe,
         numero_nf: xml.numeroNF,
+        modelo: xml.modelo,
+        tipo_documento: xml.tipoDocumento,
         data_emissao: xml.dataEmissao,
         caminho_arquivo: xml.caminhoArquivo,
         tamanho_bytes: xml.tamanhoBytes,
@@ -391,7 +395,16 @@ export class SupabaseStorage implements IStorage {
       .select()
       .single();
 
-    if (error) throw new Error(`Erro ao criar XML: ${error.message}`);
+    // Se erro de duplicata (constraint unique violation), busca XML existente
+    if (error) {
+      if (error.code === "23505") { // PostgreSQL unique violation
+        console.log(`XML duplicado detectado (ignorado): ${xml.chaveNFe}`);
+        const existing = await this.getXmlByChave(xml.chaveNFe, xml.userId);
+        if (existing) return existing;
+      }
+      throw new Error(`Erro ao criar XML: ${error.message}`);
+    }
+    
     return parseXml(data);
   }
 

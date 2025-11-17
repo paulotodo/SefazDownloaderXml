@@ -3,6 +3,20 @@
 ## Overview
 This web application automates the download of XMLs (nfeProc) from SEFAZ, offering hourly synchronization for multiple registered companies. It provides a robust, multi-tenant solution for managing fiscal documents, aiming to streamline compliance and data access for businesses. The project integrates a modern web stack with secure authentication and a reliable system for interacting with government services, promising efficiency and reduced manual effort in fiscal document management.
 
+## Recent Critical Fixes (November 17, 2025)
+### 6. Correção de Erro de Duplicação de XMLs
+- **Problem**: Erro `duplicate key value violates unique constraint "xmls_empresa_id_chave_nfe_key"` em resEvento e procEventoNFe
+- **Root Cause**: 
+  - Métodos `saveResEvento` e `saveProcEvento` não verificavam duplicatas antes de inserir
+  - Race condition possível mesmo com verificação (check-then-insert não é atômico)
+  - Constraint única existe no Supabase mas não estava sendo tratada corretamente
+- **Solution**: 
+  - Implementado tratamento de erro PostgreSQL 23505 (unique violation) em `createXml`
+  - Quando detecta duplicata, busca e retorna o XML existente em vez de falhar
+  - Removidas verificações redundantes de `saveNFeProc` e `saveResNFe` (melhoria de performance)
+- **Behavior**: Sistema agora ignora silenciosamente tentativas de inserir XMLs duplicados
+- **Files**: `server/supabase-storage.ts`, `server/sefaz-service.ts`
+
 ## Recent Critical Fixes (November 16, 2025)
 ### 3. Download de XMLs Implementado (Autenticado)
 - **Problem**: Botão de download não tinha função onClick e window.location.href não envia headers de autenticação

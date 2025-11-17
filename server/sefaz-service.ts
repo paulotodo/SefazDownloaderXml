@@ -353,13 +353,6 @@ export class SefazService {
       throw new Error("Não foi possível extrair chave ou número da NF-e/NFC-e");
     }
 
-    // Verifica duplicata
-    const existing = await storage.getXmlByChave(chNFe, empresa.userId);
-    if (existing) {
-      console.log(`XML já existe: ${chNFe}`);
-      return;
-    }
-
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/numeroNF.xml
     const dataEmissao = new Date(dhEmi);
     const ano = dataEmissao.getFullYear();
@@ -452,13 +445,6 @@ export class SefazService {
     // Extrai modelo da chave (posições 20-22): "55" ou "65"
     // Formato chave: UF(2) + AAMM(6) + CNPJ(14) + MOD(2) + ...
     const modelo = chNFe.substring(20, 22) || "55";
-
-    // Verifica duplicata
-    const existing = await storage.getXmlByChave(chNFe, empresa.userId);
-    if (existing) {
-      console.log(`Resumo já existe: ${chNFe}`);
-      return;
-    }
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Resumos/CHAVEnsu_NSU.xml
     const dataEmissao = new Date(dhEmi);
