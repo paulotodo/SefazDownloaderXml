@@ -755,6 +755,74 @@ export class SefazService {
       mensagem: `Resumo salvo: ${tipoDoc} (resNFe)`,
       detalhes: JSON.stringify({ chNFe, caminhoArquivo: caminhoCompleto, modelo, nsu }),
     });
+
+    // FASE 4: Manifestação automática do destinatário (NT 2020.001)
+    // Se manifestacaoAutomatica está ativa, manifesta Ciência (210210) automaticamente
+    // IMPORTANTE: Só manifesta se empresa for o DESTINATÁRIO (não emitente)
+    if (empresa.manifestacaoAutomatica) {
+      try {
+        // Validação crítica: Empresa deve ser o destinatário (CNPJ/CPF deve coincidir)
+        const cnpjDest = String(resNFe.CNPJ || "");
+        const cpfDest = String(resNFe.CPF || "");
+        const empresaCNPJ = empresa.cnpj.replace(/\D/g, ""); // Remove formatação
+        
+        const isDestinatario = cnpjDest === empresaCNPJ || cpfDest === empresaCNPJ;
+        
+        if (!isDestinatario) {
+          console.log(`[Manifestação Automática] SKIPPED - Empresa não é destinatária (chave ${chNFe})`);
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId,
+            nivel: "debug",
+            mensagem: `Manifestação automática não aplicável - empresa não é destinatária`,
+            detalhes: JSON.stringify({ 
+              chNFe,
+              cnpjEmpresa: empresaCNPJ,
+              cnpjDest,
+              cpfDest,
+              observacao: "resNFe não representa operação onde empresa é destinatária"
+            }),
+          });
+          return; // Sai do método sem manifestar
+        }
+        
+        console.log(`[Manifestação Automática] Empresa é destinatária - iniciando Ciência para chave ${chNFe}`);
+        
+        // Verifica se já foi manifestada antes
+        const manifestacaoExistente = await storage.getManifestacaoByChave(chNFe, empresa.userId);
+        
+        if (manifestacaoExistente) {
+          console.log(`[Manifestação Automática] Chave ${chNFe} já possui manifestação (${manifestacaoExistente.tipoEvento})`);
+        } else {
+          // Manifesta Ciência da Operação (210210)
+          await this.manifestarEvento(
+            empresa,
+            chNFe,
+            TIPOS_MANIFESTACAO.CIENCIA,
+            undefined // Ciência não requer justificativa
+          );
+          
+          console.log(`[Manifestação Automática] ✅ Ciência manifestada com sucesso para ${chNFe}`);
+        }
+      } catch (error) {
+        // Erro na manifestação NÃO deve interromper sincronização
+        console.error(`[Manifestação Automática] ❌ Erro ao manifestar ${chNFe}:`, error);
+        
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          sincronizacaoId,
+          nivel: "warning",
+          mensagem: `Erro na manifestação automática para chave ${chNFe}`,
+          detalhes: JSON.stringify({ 
+            chNFe, 
+            error: String(error),
+            observacao: "Erro não interrompeu sincronização. Manifestação pode ser feita manualmente."
+          }),
+        });
+      }
+    }
   }
 
   /**
