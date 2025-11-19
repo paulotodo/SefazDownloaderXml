@@ -73,6 +73,42 @@ This web application automates the download of XMLs (nfeProc) from SEFAZ, offeri
   - Erro: Badge destructive + XCircle icon
 - **Files**: `client/src/pages/xmls.tsx`
 
+### FASE 6 - Sistema de Configurações Persistidas (November 19, 2025)
+- **Feature**: Sistema completo de configurações por usuário com persistência em banco de dados
+- **Schema Changes**:
+  - Nova tabela `configuracoes` com campos: intervaloSincronizacao, sincronizacaoAutomatica, sincronizarAoIniciar, retryAutomatico, maxRetries, timeoutRequisicao, validarSSL, logsDetalhados, notificarNovosXmls, notificarErros, relatorioDiario, emailNotificacoes
+  - Unique constraint em user_id (uma configuração por usuário)
+  - Valores padrão: intervalo=1h, auto-sync=true, retry=true, maxRetries=3, timeout=60s
+- **Storage Layer**: Métodos CRUD implementados (getConfiguracao, createConfiguracao, updateConfiguracao)
+- **API Endpoints**:
+  - GET /api/configuracoes: Retorna configuração do usuário (cria defaults se não existir)
+  - PUT /api/configuracoes: Atualiza ou cria configuração
+- **Frontend**: Página /configuracoes com 3 tabs (Geral, Agendamento, Notificações)
+  - Switches para configurações booleanas
+  - Select para intervalo de sincronização (15m a 24h)
+  - Inputs numéricos para timeouts e max retries
+  - Botões "Salvar Configurações" e "Restaurar Padrões"
+  - Integração completa com React Query para cache e invalidação
+- **Data Flow**: Configurações salvas em banco Supabase com isolamento por userId, não em localStorage
+- **Files**: `shared/schema.ts`, `server/storage.ts`, `server/supabase-storage.ts`, `server/routes.ts`, `client/src/pages/configuracoes.tsx`
+
+### FASE 7 - Edição de Empresas (November 19, 2025)
+- **Feature**: Sistema completo de edição de empresas cadastradas
+- **Backend**:
+  - Endpoint PATCH /api/empresas/:id com validação de schema Zod
+  - Suporte a upload opcional de certificado (mantém existente se não fornecido)
+  - CNPJ é imutável após criação (não pode ser alterado)
+  - Validação de campos obrigatórios e tipos de dados
+- **Frontend**: Página /empresas/:id/editar
+  - Formulário pré-preenchido com dados existentes
+  - Campo CNPJ read-only (disabled)
+  - Certificado opcional (mantém existente se não fornecido)
+  - Switches para manifestacaoAutomatica e ativo
+  - Select para tipoArmazenamento (local/supabase)
+  - Integração com React Query e navegação automática após sucesso
+- **UI/UX**: Botão "Editar" adicionado na listagem de empresas
+- **Files**: `server/routes.ts`, `client/src/pages/empresa-edit.tsx`, `client/src/pages/empresas.tsx`
+
 ## User Preferences
 I prefer clear and direct communication. When making changes or suggesting improvements, please explain the "why" behind them, focusing on the benefits and potential impact. I value iterative development and would like to be consulted before any major architectural shifts or significant code refactoring. Please ensure that all suggestions are actionable and provide code examples where appropriate. I prefer a coding style that emphasizes readability and maintainability, utilizing TypeScript's type safety effectively.
 
