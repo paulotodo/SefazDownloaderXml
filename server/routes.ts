@@ -503,6 +503,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== MANIFESTAÇÕES DO DESTINATÁRIO (NT 2020.001) ========== (protegidas)
+  app.get("/api/manifestacoes", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const { empresaId, status } = req.query;
+      
+      let manifestacoes;
+      if (empresaId) {
+        manifestacoes = await storage.getManifestacoesByEmpresa(empresaId as string, userId);
+      } else {
+        manifestacoes = await storage.getManifestacoes(userId);
+      }
+      
+      // Filtro adicional por status se fornecido
+      if (status && typeof status === "string") {
+        manifestacoes = manifestacoes.filter(m => m.status === status);
+      }
+      
+      res.json(manifestacoes);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/manifestacoes/manifestar", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const { empresaId, chaveNFe, tipoEvento, justificativa } = req.body;
+      
+      // Validação básica
+      if (!empresaId || !chaveNFe || !tipoEvento) {
+        return res.status(400).json({ 
+          error: "empresaId, chaveNFe e tipoEvento são obrigatórios" 
+        });
+      }
+      
+      // Valida tipo de evento
+      const tiposValidos = ["210200", "210210", "210220", "210240"];
+      if (!tiposValidos.includes(tipoEvento)) {
+        return res.status(400).json({ 
+          error: `tipoEvento inválido. Valores aceitos: ${tiposValidos.join(", ")}` 
+        });
+      }
+      
+      // Valida justificativa obrigatória para 210240
+      if (tipoEvento === "210240" && !justificativa) {
+        return res.status(400).json({ 
+          error: "Justificativa é obrigatória para Operação Não Realizada (210240)" 
+        });
+      }
+      
+      // Busca empresa
+      const empresa = await storage.getEmpresa(empresaId, userId);
+      if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+      }
+      
+      // Dispara manifestação via SefazService
+      const manifestacao = await sefazService.manifestarEvento(
+        empresa,
+        chaveNFe,
+        tipoEvento,
+        justificativa
+      );
+      
+      res.json({ 
+        success: true, 
+        manifestacao,
+        message: "Manifestação enviada com sucesso" 
+      });
+    } catch (error) {
+      console.error("Erro ao manifestar:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== AGENDAMENTO AUTOMÁTICO ==========
   // Executa a cada 1 hora
   cron.schedule("0 * * * *", async () => {
