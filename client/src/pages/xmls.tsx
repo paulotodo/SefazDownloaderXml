@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Search, FolderOpen, ChevronRight, ChevronDown } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { FileText, Download, Search, FolderOpen, ChevronRight, ChevronDown, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +28,15 @@ interface Xml {
   createdAt: string;
 }
 
+interface Manifestacao {
+  id: string;
+  empresaId: string;
+  chaveNFe: string;
+  tipoEvento: string;
+  status: string;
+  dataManifestacao: string | null;
+}
+
 interface XmlGroup {
   cnpj: string;
   empresaNome: string;
@@ -39,6 +49,41 @@ interface XmlGroup {
   }[];
 }
 
+function getManifestacaoBadge(manifestacao?: Manifestacao) {
+  if (!manifestacao) {
+    return (
+      <Badge variant="outline" className="gap-1 text-xs">
+        <Clock className="w-3 h-3" />
+        Pendente
+      </Badge>
+    );
+  }
+
+  if (manifestacao.status === "sucesso") {
+    return (
+      <Badge variant="default" className="gap-1 text-xs">
+        <CheckCircle2 className="w-3 h-3" />
+        Manifestado
+      </Badge>
+    );
+  }
+
+  if (manifestacao.status === "erro") {
+    return (
+      <Badge variant="destructive" className="gap-1 text-xs">
+        <XCircle className="w-3 h-3" />
+        Erro
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant="secondary" className="gap-1 text-xs">
+      {manifestacao.status}
+    </Badge>
+  );
+}
+
 export default function Xmls() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
@@ -49,6 +94,14 @@ export default function Xmls() {
   const { data: xmls, isLoading } = useQuery<Xml[]>({
     queryKey: ["/api/xmls"],
   });
+
+  const { data: manifestacoes } = useQuery<Manifestacao[]>({
+    queryKey: ["/api/manifestacoes"],
+  });
+
+  // Map de chaveNFe -> Manifestacao para lookup rápido
+  const manifestacoesMap = new Map<string, Manifestacao>();
+  manifestacoes?.forEach((m) => manifestacoesMap.set(m.chaveNFe, m));
 
   const filteredXmls = xmls
     ?.filter((xml) => xml.tipoDocumento === "nfeProc") // Apenas XMLs completos
@@ -286,6 +339,7 @@ export default function Xmls() {
                                                 {xml.chaveNFe}
                                               </p>
                                             </div>
+                                            {getManifestacaoBadge(manifestacoesMap.get(xml.chaveNFe))}
                                             <div className="text-xs text-muted-foreground flex-shrink-0">
                                               {formatFileSize(xml.tamanhoBytes)}
                                             </div>
