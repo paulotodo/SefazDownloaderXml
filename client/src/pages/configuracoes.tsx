@@ -12,8 +12,120 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Settings, Clock, Bell, Shield } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useState, useEffect } from "react";
+import type { Configuracao } from "@shared/schema";
 
 export default function Configuracoes() {
+  const { toast } = useToast();
+  
+  const { data: config, isLoading } = useQuery<Configuracao>({
+    queryKey: ["/api/configuracoes"],
+  });
+
+  const [formData, setFormData] = useState({
+    intervaloSincronizacao: "1h" as const,
+    sincronizacaoAutomatica: true,
+    sincronizarAoIniciar: true,
+    retryAutomatico: true,
+    maxRetries: 3,
+    timeoutRequisicao: 60,
+    validarSSL: true,
+    logsDetalhados: false,
+    notificarNovosXmls: true,
+    notificarErros: true,
+    relatorioDiario: false,
+    emailNotificacoes: "",
+  });
+
+  useEffect(() => {
+    if (config) {
+      setFormData({
+        intervaloSincronizacao: config.intervaloSincronizacao as any,
+        sincronizacaoAutomatica: config.sincronizacaoAutomatica,
+        sincronizarAoIniciar: config.sincronizarAoIniciar,
+        retryAutomatico: config.retryAutomatico,
+        maxRetries: config.maxRetries,
+        timeoutRequisicao: config.timeoutRequisicao,
+        validarSSL: config.validarSSL,
+        logsDetalhados: config.logsDetalhados,
+        notificarNovosXmls: config.notificarNovosXmls,
+        notificarErros: config.notificarErros,
+        relatorioDiario: config.relatorioDiario,
+        emailNotificacoes: config.emailNotificacoes || "",
+      });
+    }
+  }, [config]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/configuracoes", {
+        method: "PUT",
+        body: JSON.stringify(formData),
+        headers: { "Content-Type": "application/json" },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/configuracoes"] });
+      toast({
+        title: "Configurações salvas!",
+        description: "As configurações foram atualizadas com sucesso.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro ao salvar",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("/api/configuracoes", {
+        method: "PUT",
+        body: JSON.stringify({
+          intervaloSincronizacao: "1h",
+          sincronizacaoAutomatica: true,
+          sincronizarAoIniciar: true,
+          retryAutomatico: true,
+          maxRetries: 3,
+          timeoutRequisicao: 60,
+          validarSSL: true,
+          logsDetalhados: false,
+          notificarNovosXmls: true,
+          notificarErros: true,
+          relatorioDiario: false,
+          emailNotificacoes: "",
+        }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/configuracoes"] });
+      toast({
+        title: "Configurações restauradas!",
+        description: "As configurações foram restauradas para os valores padrão.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro ao restaurar",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Carregando configurações...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
@@ -44,19 +156,6 @@ export default function Configuracoes() {
               <CardDescription>Preferências básicas do sistema</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="dest-path">Diretório de Destino dos XMLs</Label>
-                <Input
-                  id="dest-path"
-                  placeholder="/caminho/para/xmls"
-                  defaultValue="./xmls"
-                  data-testid="input-dest-path"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Caminho onde os XMLs serão salvos no servidor
-                </p>
-              </div>
-
               <div className="flex items-center justify-between rounded-lg border p-4">
                 <div className="space-y-0.5">
                   <Label>Sincronização Automática</Label>
@@ -64,7 +163,13 @@ export default function Configuracoes() {
                     Ativa ou desativa a sincronização automática para todas as empresas
                   </p>
                 </div>
-                <Switch defaultChecked data-testid="switch-auto-sync" />
+                <Switch
+                  checked={formData.sincronizacaoAutomatica}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, sincronizacaoAutomatica: checked })
+                  }
+                  data-testid="switch-auto-sync"
+                />
               </div>
 
               <div className="flex items-center justify-between rounded-lg border p-4">
@@ -74,7 +179,13 @@ export default function Configuracoes() {
                     Registra informações detalhadas de debug nos logs
                   </p>
                 </div>
-                <Switch data-testid="switch-verbose-logs" />
+                <Switch
+                  checked={formData.logsDetalhados}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, logsDetalhados: checked })
+                  }
+                  data-testid="switch-verbose-logs"
+                />
               </div>
             </CardContent>
           </Card>
@@ -93,7 +204,10 @@ export default function Configuracoes() {
                 <Input
                   id="timeout"
                   type="number"
-                  defaultValue="60"
+                  value={formData.timeoutRequisicao}
+                  onChange={(e) =>
+                    setFormData({ ...formData, timeoutRequisicao: parseInt(e.target.value) })
+                  }
                   min="30"
                   max="300"
                   data-testid="input-timeout"
@@ -110,7 +224,13 @@ export default function Configuracoes() {
                     Verifica a validade dos certificados SSL nas conexões
                   </p>
                 </div>
-                <Switch defaultChecked data-testid="switch-verify-ssl" />
+                <Switch
+                  checked={formData.validarSSL}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, validarSSL: checked })
+                  }
+                  data-testid="switch-verify-ssl"
+                />
               </div>
             </CardContent>
           </Card>
@@ -125,7 +245,12 @@ export default function Configuracoes() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="interval">Intervalo de Sincronização</Label>
-                <Select defaultValue="1h">
+                <Select
+                  value={formData.intervaloSincronizacao}
+                  onValueChange={(value: any) =>
+                    setFormData({ ...formData, intervaloSincronizacao: value })
+                  }
+                >
                   <SelectTrigger id="interval" data-testid="select-interval">
                     <SelectValue placeholder="Selecione o intervalo" />
                   </SelectTrigger>
@@ -151,7 +276,13 @@ export default function Configuracoes() {
                     Executa sincronização imediatamente quando o sistema inicia
                   </p>
                 </div>
-                <Switch defaultChecked data-testid="switch-sync-on-start" />
+                <Switch
+                  checked={formData.sincronizarAoIniciar}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, sincronizarAoIniciar: checked })
+                  }
+                  data-testid="switch-sync-on-start"
+                />
               </div>
 
               <div className="flex items-center justify-between rounded-lg border p-4">
@@ -161,7 +292,13 @@ export default function Configuracoes() {
                     Tenta novamente automaticamente em caso de falha
                   </p>
                 </div>
-                <Switch defaultChecked data-testid="switch-auto-retry" />
+                <Switch
+                  checked={formData.retryAutomatico}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, retryAutomatico: checked })
+                  }
+                  data-testid="switch-auto-retry"
+                />
               </div>
 
               <div className="space-y-2">
@@ -169,7 +306,10 @@ export default function Configuracoes() {
                 <Input
                   id="max-retries"
                   type="number"
-                  defaultValue="3"
+                  value={formData.maxRetries}
+                  onChange={(e) =>
+                    setFormData({ ...formData, maxRetries: parseInt(e.target.value) })
+                  }
                   min="1"
                   max="10"
                   data-testid="input-max-retries"
@@ -177,24 +317,6 @@ export default function Configuracoes() {
                 <p className="text-xs text-muted-foreground">
                   Número de tentativas em caso de falha
                 </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg font-medium">Próxima Sincronização</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-                <div>
-                  <p className="text-sm font-medium">Agendada para:</p>
-                  <p className="text-lg font-semibold mt-1">Hoje às 15:00</p>
-                </div>
-                <Button data-testid="button-sync-now">
-                  <Clock className="w-4 h-4 mr-2" />
-                  Sincronizar Agora
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -214,7 +336,13 @@ export default function Configuracoes() {
                     Receba notificação quando novos XMLs forem baixados
                   </p>
                 </div>
-                <Switch defaultChecked data-testid="switch-notify-new-xmls" />
+                <Switch
+                  checked={formData.notificarNovosXmls}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, notificarNovosXmls: checked })
+                  }
+                  data-testid="switch-notify-new-xmls"
+                />
               </div>
 
               <div className="flex items-center justify-between rounded-lg border p-4">
@@ -224,7 +352,13 @@ export default function Configuracoes() {
                     Receba notificação quando ocorrerem erros na sincronização
                   </p>
                 </div>
-                <Switch defaultChecked data-testid="switch-notify-errors" />
+                <Switch
+                  checked={formData.notificarErros}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, notificarErros: checked })
+                  }
+                  data-testid="switch-notify-errors"
+                />
               </div>
 
               <div className="flex items-center justify-between rounded-lg border p-4">
@@ -234,7 +368,13 @@ export default function Configuracoes() {
                     Receba um resumo diário das sincronizações
                   </p>
                 </div>
-                <Switch data-testid="switch-daily-report" />
+                <Switch
+                  checked={formData.relatorioDiario}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, relatorioDiario: checked })
+                  }
+                  data-testid="switch-daily-report"
+                />
               </div>
 
               <div className="space-y-2">
@@ -242,6 +382,10 @@ export default function Configuracoes() {
                 <Input
                   id="email"
                   type="email"
+                  value={formData.emailNotificacoes}
+                  onChange={(e) =>
+                    setFormData({ ...formData, emailNotificacoes: e.target.value })
+                  }
                   placeholder="seu@email.com"
                   data-testid="input-notification-email"
                 />
@@ -255,11 +399,20 @@ export default function Configuracoes() {
       </Tabs>
 
       <div className="flex items-center gap-3">
-        <Button data-testid="button-save-config">
-          Salvar Configurações
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          data-testid="button-save-config"
+        >
+          {saveMutation.isPending ? "Salvando..." : "Salvar Configurações"}
         </Button>
-        <Button variant="outline" data-testid="button-reset-config">
-          Restaurar Padrões
+        <Button
+          variant="outline"
+          onClick={() => resetMutation.mutate()}
+          disabled={resetMutation.isPending}
+          data-testid="button-reset-config"
+        >
+          {resetMutation.isPending ? "Restaurando..." : "Restaurar Padrões"}
         </Button>
       </div>
     </div>

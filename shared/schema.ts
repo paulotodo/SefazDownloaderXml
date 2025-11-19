@@ -242,3 +242,49 @@ export const DESCRICAO_EVENTOS_MANIFESTACAO: Record<string, string> = {
   "210220": "Desconhecimento da Operação",
   "210240": "Operação não Realizada",
 };
+
+// Tabela de Configurações do Usuário
+export const configuracoes = pgTable("configuracoes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().unique(), // references auth.users(id) - uma config por usuário
+  intervaloSincronizacao: text("intervalo_sincronizacao").notNull().default("1h"), // "15m", "30m", "1h", "2h", "6h", "12h", "24h"
+  sincronizacaoAutomatica: boolean("sincronizacao_automatica").notNull().default(true),
+  sincronizarAoIniciar: boolean("sincronizar_ao_iniciar").notNull().default(true),
+  retryAutomatico: boolean("retry_automatico").notNull().default(true),
+  maxRetries: integer("max_retries").notNull().default(3),
+  timeoutRequisicao: integer("timeout_requisicao").notNull().default(60), // segundos
+  validarSSL: boolean("validar_ssl").notNull().default(true),
+  logsDetalhados: boolean("logs_detalhados").notNull().default(false),
+  notificarNovosXmls: boolean("notificar_novos_xmls").notNull().default(true),
+  notificarErros: boolean("notificar_erros").notNull().default(true),
+  relatorioDiario: boolean("relatorio_diario").notNull().default(false),
+  emailNotificacoes: text("email_notificacoes"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const insertConfiguracaoSchema = createInsertSchema(configuracoes).omit({
+  id: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateConfiguracaoSchema = z.object({
+  intervaloSincronizacao: z.enum(["15m", "30m", "1h", "2h", "6h", "12h", "24h"]).optional(),
+  sincronizacaoAutomatica: z.boolean().optional(),
+  sincronizarAoIniciar: z.boolean().optional(),
+  retryAutomatico: z.boolean().optional(),
+  maxRetries: z.number().int().min(1).max(10).optional(),
+  timeoutRequisicao: z.number().int().min(30).max(300).optional(),
+  validarSSL: z.boolean().optional(),
+  logsDetalhados: z.boolean().optional(),
+  notificarNovosXmls: z.boolean().optional(),
+  notificarErros: z.boolean().optional(),
+  relatorioDiario: z.boolean().optional(),
+  emailNotificacoes: z.string().email().optional().or(z.literal("")),
+});
+
+export type InsertConfiguracao = z.infer<typeof insertConfiguracaoSchema>;
+export type UpdateConfiguracao = z.infer<typeof updateConfiguracaoSchema>;
+export type Configuracao = typeof configuracoes.$inferSelect;

@@ -658,6 +658,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== CONFIGURAÇÕES ==========
+  
+  app.get("/api/configuracoes", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      let config = await storage.getConfiguracao(userId);
+      
+      // Se não existe, cria com valores padrão
+      if (!config) {
+        config = await storage.createConfiguracao({ userId });
+      }
+      
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+  
+  app.put("/api/configuracoes", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const { updateConfiguracaoSchema } = await import("@shared/schema");
+      const updates = updateConfiguracaoSchema.parse(req.body);
+      
+      // Verifica se existe configuração
+      let config = await storage.getConfiguracao(userId);
+      
+      if (!config) {
+        // Cria se não existir
+        config = await storage.createConfiguracao({ userId, ...updates });
+      } else {
+        // Atualiza se existir
+        config = await storage.updateConfiguracao(userId, updates);
+      }
+      
+      res.json(config);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== AGENDAMENTO AUTOMÁTICO ==========
   // Executa a cada 1 hora
   cron.schedule("0 * * * *", async () => {

@@ -11,6 +11,9 @@ import type {
   InsertLog,
   Manifestacao,
   InsertManifestacao,
+  Configuracao,
+  InsertConfiguracao,
+  UpdateConfiguracao,
 } from "@shared/schema";
 
 // ========== FUNÇÕES DE PARSE (snake_case → camelCase) ==========
@@ -99,6 +102,27 @@ function parseManifestacao(raw: any): Manifestacao {
     justificativa: raw.justificativa,
     tentativas: raw.tentativas,
     ultimoErro: raw.ultimo_erro,
+    createdAt: new Date(raw.created_at),
+    updatedAt: new Date(raw.updated_at),
+  };
+}
+
+function parseConfiguracao(raw: any): Configuracao {
+  return {
+    id: raw.id,
+    userId: raw.user_id,
+    intervaloSincronizacao: raw.intervalo_sincronizacao,
+    sincronizacaoAutomatica: raw.sincronizacao_automatica,
+    sincronizarAoIniciar: raw.sincronizar_ao_iniciar,
+    retryAutomatico: raw.retry_automatico,
+    maxRetries: raw.max_retries,
+    timeoutRequisicao: raw.timeout_requisicao,
+    validarSSL: raw.validar_ssl,
+    logsDetalhados: raw.logs_detalhados,
+    notificarNovosXmls: raw.notificar_novos_xmls,
+    notificarErros: raw.notificar_erros,
+    relatorioDiario: raw.relatorio_diario,
+    emailNotificacoes: raw.email_notificacoes,
     createdAt: new Date(raw.created_at),
     updatedAt: new Date(raw.updated_at),
   };
@@ -629,6 +653,73 @@ export class SupabaseStorage implements IStorage {
 
     if (error) throw new Error(`Erro ao buscar manifestações recentes: ${error.message}`);
     return (data || []).map(parseManifestacao);
+  }
+
+  // ========== CONFIGURAÇÕES ==========
+
+  async getConfiguracao(userId: string): Promise<Configuracao | null> {
+    const { data, error } = await supabaseAdmin
+      .from("configuracoes")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Erro ao buscar configuração: ${error.message}`);
+    return data ? parseConfiguracao(data) : null;
+  }
+
+  async createConfiguracao(config: InsertConfiguracao & { userId: string }): Promise<Configuracao> {
+    const { data, error } = await supabaseAdmin
+      .from("configuracoes")
+      .insert({
+        user_id: config.userId,
+        intervalo_sincronizacao: config.intervaloSincronizacao || "1h",
+        sincronizacao_automatica: config.sincronizacaoAutomatica !== undefined ? config.sincronizacaoAutomatica : true,
+        sincronizar_ao_iniciar: config.sincronizarAoIniciar !== undefined ? config.sincronizarAoIniciar : true,
+        retry_automatico: config.retryAutomatico !== undefined ? config.retryAutomatico : true,
+        max_retries: config.maxRetries || 3,
+        timeout_requisicao: config.timeoutRequisicao || 60,
+        validar_ssl: config.validarSSL !== undefined ? config.validarSSL : true,
+        logs_detalhados: config.logsDetalhados !== undefined ? config.logsDetalhados : false,
+        notificar_novos_xmls: config.notificarNovosXmls !== undefined ? config.notificarNovosXmls : true,
+        notificar_erros: config.notificarErros !== undefined ? config.notificarErros : true,
+        relatorio_diario: config.relatorioDiario !== undefined ? config.relatorioDiario : false,
+        email_notificacoes: config.emailNotificacoes || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(`Erro ao criar configuração: ${error.message}`);
+    return parseConfiguracao(data);
+  }
+
+  async updateConfiguracao(userId: string, updates: UpdateConfiguracao): Promise<Configuracao> {
+    const updateData: any = {};
+    
+    if (updates.intervaloSincronizacao !== undefined) updateData.intervalo_sincronizacao = updates.intervaloSincronizacao;
+    if (updates.sincronizacaoAutomatica !== undefined) updateData.sincronizacao_automatica = updates.sincronizacaoAutomatica;
+    if (updates.sincronizarAoIniciar !== undefined) updateData.sincronizar_ao_iniciar = updates.sincronizarAoIniciar;
+    if (updates.retryAutomatico !== undefined) updateData.retry_automatico = updates.retryAutomatico;
+    if (updates.maxRetries !== undefined) updateData.max_retries = updates.maxRetries;
+    if (updates.timeoutRequisicao !== undefined) updateData.timeout_requisicao = updates.timeoutRequisicao;
+    if (updates.validarSSL !== undefined) updateData.validar_ssl = updates.validarSSL;
+    if (updates.logsDetalhados !== undefined) updateData.logs_detalhados = updates.logsDetalhados;
+    if (updates.notificarNovosXmls !== undefined) updateData.notificar_novos_xmls = updates.notificarNovosXmls;
+    if (updates.notificarErros !== undefined) updateData.notificar_erros = updates.notificarErros;
+    if (updates.relatorioDiario !== undefined) updateData.relatorio_diario = updates.relatorioDiario;
+    if (updates.emailNotificacoes !== undefined) updateData.email_notificacoes = updates.emailNotificacoes || null;
+
+    updateData.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from("configuracoes")
+      .update(updateData)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) throw new Error(`Erro ao atualizar configuração: ${error.message}`);
+    return parseConfiguracao(data);
   }
 }
 

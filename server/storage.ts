@@ -9,6 +9,9 @@ import {
   type InsertLog,
   type Manifestacao,
   type InsertManifestacao,
+  type Configuracao,
+  type InsertConfiguracao,
+  type UpdateConfiguracao,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -50,6 +53,11 @@ export interface IStorage {
   createManifestacao(manifestacao: InsertManifestacao & { userId: string }): Promise<Manifestacao>;
   updateManifestacao(id: string, updates: Partial<Manifestacao>, userId?: string): Promise<Manifestacao | null>;
   getManifestacoesRecentes(limit?: number, userId?: string): Promise<Manifestacao[]>;
+
+  // Configurações
+  getConfiguracao(userId: string): Promise<Configuracao | null>;
+  createConfiguracao(config: InsertConfiguracao & { userId: string }): Promise<Configuracao>;
+  updateConfiguracao(userId: string, updates: UpdateConfiguracao): Promise<Configuracao>;
 }
 
 // Exporta SupabaseStorage como implementação única
