@@ -35,6 +35,8 @@ const formSchema = z.object({
   ambiente: z.enum(["prod", "hom"]),
   certificadoSenha: z.string().min(1, "Senha do certificado é obrigatória"),
   ativo: z.boolean().default(true),
+  tipoArmazenamento: z.enum(["local", "supabase"]).default("local"),
+  manifestacaoAutomatica: z.boolean().default(false),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -54,6 +56,8 @@ export default function EmpresaForm() {
       ambiente: "prod",
       certificadoSenha: "",
       ativo: true,
+      tipoArmazenamento: "local",
+      manifestacaoAutomatica: false,
     },
   });
 
@@ -74,6 +78,8 @@ export default function EmpresaForm() {
       formData.append("uf", data.uf);
       formData.append("ambiente", data.ambiente);
       formData.append("certificadoSenha", data.certificadoSenha);
+      formData.append("tipoArmazenamento", data.tipoArmazenamento);
+      formData.append("manifestacaoAutomatica", data.manifestacaoAutomatica.toString());
       formData.append("certificado", certificadoFile);
 
       await apiRequest("/api/empresas", {
@@ -260,6 +266,57 @@ export default function EmpresaForm() {
                         checked={field.value}
                         onCheckedChange={field.onChange}
                         data-testid="switch-ativo"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="tipoArmazenamento"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-xs font-medium uppercase tracking-wide">
+                      Tipo de Armazenamento
+                    </FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-tipo-armazenamento">
+                          <SelectValue placeholder="Selecione o tipo de armazenamento" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="local">Local (filesystem)</SelectItem>
+                        <SelectItem value="supabase">Supabase Storage</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Define onde os XMLs serão armazenados (local ou nuvem)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="manifestacaoAutomatica"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-sm font-medium">
+                        Manifestação Automática
+                      </FormLabel>
+                      <FormDescription>
+                        Manifesta automaticamente evento 210210 (Ciência da Operação) quando um novo XML é recebido
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-manifestacao-automatica"
                       />
                     </FormControl>
                   </FormItem>

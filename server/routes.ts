@@ -151,6 +151,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         uf: req.body.uf,
         ambiente: req.body.ambiente,
         certificadoSenha: req.body.certificadoSenha,
+        tipoArmazenamento: req.body.tipoArmazenamento,
+        manifestacaoAutomatica: req.body.manifestacaoAutomatica,
       });
 
       // ===== VALIDAR CERTIFICADO E SENHA =====

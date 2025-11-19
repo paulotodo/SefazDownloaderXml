@@ -162,6 +162,8 @@ export const uploadCertificadoSchema = z.object({
   uf: z.string().length(2, "UF deve ter 2 caracteres"),
   ambiente: z.enum(["prod", "hom"]),
   certificadoSenha: z.string().min(1, "Senha do certificado é obrigatória"),
+  tipoArmazenamento: z.enum(["local", "supabase"]).optional().default("local"),
+  manifestacaoAutomatica: z.string().optional().transform(val => val === "true").default("false"),
 });
 
 export type UploadCertificado = z.infer<typeof uploadCertificadoSchema>;
