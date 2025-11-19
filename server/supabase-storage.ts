@@ -9,6 +9,8 @@ import type {
   InsertXml,
   Log,
   InsertLog,
+  Manifestacao,
+  InsertManifestacao,
 } from "@shared/schema";
 
 // ========== FUNÇÕES DE PARSE (snake_case → camelCase) ==========
@@ -26,6 +28,8 @@ function parseEmpresa(raw: any): Empresa {
     ativo: raw.ativo,
     ultimoNSU: raw.ultimo_nsu,
     bloqueadoAte: raw.bloqueado_ate ? new Date(raw.bloqueado_ate) : null,
+    tipoArmazenamento: raw.tipo_armazenamento || "local",
+    manifestacaoAutomatica: raw.manifestacao_automatica !== undefined ? raw.manifestacao_automatica : true,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
   };
@@ -74,6 +78,29 @@ function parseLog(raw: any): Log {
     mensagem: raw.mensagem,
     detalhes: raw.detalhes,
     timestamp: raw.timestamp,
+  };
+}
+
+function parseManifestacao(raw: any): Manifestacao {
+  return {
+    id: raw.id,
+    userId: raw.user_id,
+    empresaId: raw.empresa_id,
+    chaveNFe: raw.chave_nfe,
+    tipoEvento: raw.tipo_evento,
+    status: raw.status,
+    dataAutorizacaoNFe: new Date(raw.data_autorizacao_nfe),
+    dataManifestacao: raw.data_manifestacao ? new Date(raw.data_manifestacao) : null,
+    prazoLegal: new Date(raw.prazo_legal),
+    nsuEvento: raw.nsu_evento,
+    protocoloEvento: raw.protocolo_evento,
+    cStat: raw.c_stat,
+    xMotivo: raw.x_motivo,
+    justificativa: raw.justificativa,
+    tentativas: raw.tentativas,
+    ultimoErro: raw.ultimo_erro,
+    createdAt: new Date(raw.created_at),
+    updatedAt: new Date(raw.updated_at),
   };
 }
 
@@ -148,6 +175,8 @@ export class SupabaseStorage implements IStorage {
         certificado_path: empresa.certificadoPath,
         certificado_senha: empresa.certificadoSenha,
         ativo: empresa.ativo ?? true,
+        tipo_armazenamento: empresa.tipoArmazenamento ?? "local",
+        manifestacao_automatica: empresa.manifestacaoAutomatica ?? true,
       })
       .select()
       .single();
@@ -167,6 +196,8 @@ export class SupabaseStorage implements IStorage {
     if (updates.ativo !== undefined) updateData.ativo = updates.ativo;
     if (updates.ultimoNSU !== undefined) updateData.ultimo_nsu = updates.ultimoNSU;
     if (updates.bloqueadoAte !== undefined) updateData.bloqueado_ate = updates.bloqueadoAte;
+    if (updates.tipoArmazenamento !== undefined) updateData.tipo_armazenamento = updates.tipoArmazenamento;
+    if (updates.manifestacaoAutomatica !== undefined) updateData.manifestacao_automatica = updates.manifestacaoAutomatica;
 
     let query = supabaseAdmin.from("empresas").update(updateData).eq("id", id);
     
@@ -437,7 +468,7 @@ export class SupabaseStorage implements IStorage {
   }
 
   async createLog(log: InsertLog & { userId?: string }): Promise<Log> {
-    const { data, error } = await supabaseAdmin
+    const { data, error} = await supabaseAdmin
       .from("logs")
       .insert({
         user_id: log.userId || null,
@@ -452,6 +483,152 @@ export class SupabaseStorage implements IStorage {
 
     if (error) throw new Error(`Erro ao criar log: ${error.message}`);
     return parseLog(data);
+  }
+
+  // ========== MANIFESTAÇÕES DO DESTINATÁRIO (NT 2020.001) ==========
+
+  async getManifestacoes(userId?: string): Promise<Manifestacao[]> {
+    let query = supabaseAdmin.from("manifestacoes").select("*").order("created_at", { ascending: false });
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(`Erro ao buscar manifestações: ${error.message}`);
+    return (data || []).map(parseManifestacao);
+  }
+
+  async getManifestacao(id: string, userId?: string): Promise<Manifestacao | null> {
+    let query = supabaseAdmin.from("manifestacoes").select("*").eq("id", id);
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query.single();
+
+    if (error) {
+      if (error.code === "PGRST116") return null;
+      throw new Error(`Erro ao buscar manifestação: ${error.message}`);
+    }
+
+    return parseManifestacao(data);
+  }
+
+  async getManifestacaoByChave(chaveNFe: string, userId?: string): Promise<Manifestacao | null> {
+    let query = supabaseAdmin.from("manifestacoes").select("*").eq("chave_nfe", chaveNFe);
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) throw new Error(`Erro ao buscar manifestação por chave: ${error.message}`);
+    return data ? parseManifestacao(data) : null;
+  }
+
+  async getManifestacoesByEmpresa(empresaId: string, userId?: string): Promise<Manifestacao[]> {
+    let query = supabaseAdmin.from("manifestacoes").select("*").eq("empresa_id", empresaId).order("created_at", { ascending: false });
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(`Erro ao buscar manifestações por empresa: ${error.message}`);
+    return (data || []).map(parseManifestacao);
+  }
+
+  async getManifestacoesPendentes(empresaId: string, userId?: string): Promise<Manifestacao[]> {
+    let query = supabaseAdmin
+      .from("manifestacoes")
+      .select("*")
+      .eq("empresa_id", empresaId)
+      .eq("status", "pendente")
+      .order("prazo_legal", { ascending: true });
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(`Erro ao buscar manifestações pendentes: ${error.message}`);
+    return (data || []).map(parseManifestacao);
+  }
+
+  async createManifestacao(manifestacao: InsertManifestacao & { userId: string }): Promise<Manifestacao> {
+    const { data, error } = await supabaseAdmin
+      .from("manifestacoes")
+      .insert({
+        user_id: manifestacao.userId,
+        empresa_id: manifestacao.empresaId,
+        chave_nfe: manifestacao.chaveNFe,
+        tipo_evento: manifestacao.tipoEvento,
+        status: manifestacao.status || "pendente",
+        data_autorizacao_nfe: manifestacao.dataAutorizacaoNFe,
+        data_manifestacao: manifestacao.dataManifestacao || null,
+        prazo_legal: manifestacao.prazoLegal,
+        nsu_evento: manifestacao.nsuEvento || null,
+        protocolo_evento: manifestacao.protocoloEvento || null,
+        c_stat: manifestacao.cStat || null,
+        x_motivo: manifestacao.xMotivo || null,
+        justificativa: manifestacao.justificativa || null,
+        tentativas: manifestacao.tentativas || 0,
+        ultimo_erro: manifestacao.ultimoErro || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(`Erro ao criar manifestação: ${error.message}`);
+    return parseManifestacao(data);
+  }
+
+  async updateManifestacao(id: string, updates: Partial<Manifestacao>, userId?: string): Promise<Manifestacao | null> {
+    const updateData: any = {};
+    
+    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.dataManifestacao !== undefined) updateData.data_manifestacao = updates.dataManifestacao;
+    if (updates.nsuEvento !== undefined) updateData.nsu_evento = updates.nsuEvento;
+    if (updates.protocoloEvento !== undefined) updateData.protocolo_evento = updates.protocoloEvento;
+    if (updates.cStat !== undefined) updateData.c_stat = updates.cStat;
+    if (updates.xMotivo !== undefined) updateData.x_motivo = updates.xMotivo;
+    if (updates.tentativas !== undefined) updateData.tentativas = updates.tentativas;
+    if (updates.ultimoErro !== undefined) updateData.ultimo_erro = updates.ultimoErro;
+
+    updateData.updated_at = new Date().toISOString();
+
+    let query = supabaseAdmin.from("manifestacoes").update(updateData).eq("id", id);
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query.select().single();
+
+    if (error) {
+      if (error.code === "PGRST116") return null;
+      throw new Error(`Erro ao atualizar manifestação: ${error.message}`);
+    }
+
+    return parseManifestacao(data);
+  }
+
+  async getManifestacoesRecentes(limit: number = 10, userId?: string): Promise<Manifestacao[]> {
+    let query = supabaseAdmin.from("manifestacoes").select("*").order("created_at", { ascending: false }).limit(limit);
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(`Erro ao buscar manifestações recentes: ${error.message}`);
+    return (data || []).map(parseManifestacao);
   }
 }
 

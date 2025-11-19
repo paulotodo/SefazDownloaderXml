@@ -10,6 +10,7 @@ import fs from "fs/promises";
 import cron from "node-cron";
 import { z } from "zod";
 import { insertEmpresaSchema, uploadCertificadoSchema } from "@shared/schema";
+import { xmlStorageService } from "./xml-storage";
 
 // Configuração do multer para upload de certificados
 const certificadosDir = path.join(process.cwd(), "certificados");
@@ -408,7 +409,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "XML não encontrado" });
       }
 
-      res.download(xml.caminhoArquivo);
+      // Busca empresa para saber o tipo de armazenamento
+      const empresa = await storage.getEmpresa(xml.empresaId, userId);
+      if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+      }
+
+      // Extrai caminho relativo do caminhoArquivo
+      // Suporta diferentes formatos para backward compatibility:
+      // - Novo (relativo): "xmls/NFe/12345678000100/2025/11/12345.xml"
+      // - Local antigo: "./xmls/NFe/12345678000100/2025/11/12345.xml"
+      // - Absoluto antigo: "/home/runner/project/xmls/NFe/12345678000100/2025/11/12345.xml"
+      // - Supabase: "supabase://xmls/NFe/12345678000100/2025/11/12345.xml"
+      let relativePath = xml.caminhoArquivo;
+      
+      // Se for caminho do Supabase (com protocolo)
+      if (relativePath.startsWith("supabase://xmls/")) {
+        relativePath = relativePath.substring("supabase://xmls/".length);
+      }
+      // Se for caminho local (relativo ou absoluto)
+      else {
+        // Remove prefixo "./xmls/" se existir
+        if (relativePath.startsWith("./xmls/")) {
+          relativePath = relativePath.substring("./xmls/".length);
+        }
+        // Remove "xmls/" se for o início (caso já seja relativo limpo)
+        else if (relativePath.startsWith("xmls/")) {
+          relativePath = relativePath.substring("xmls/".length);
+        }
+        // Se for caminho absoluto, extrai apenas a parte após "/xmls/"
+        else if (relativePath.includes("/xmls/")) {
+          const idx = relativePath.lastIndexOf("/xmls/");
+          relativePath = relativePath.substring(idx + "/xmls/".length);
+        }
+        // Se ainda for um caminho absoluto sem "/xmls/" (caso extremo), usa direto com res.download
+        else if (path.isAbsolute(relativePath)) {
+          // Backward compatibility: se for caminho absoluto antigo, usa res.download diretamente
+          return res.download(relativePath);
+        }
+      }
+
+      // Recupera XML usando storage híbrido
+      const xmlContent = await xmlStorageService.getXml(empresa.tipoArmazenamento, relativePath);
+
+      // Envia XML com headers apropriados
+      const filename = path.basename(relativePath);
+      res.setHeader("Content-Type", "application/xml");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(xmlContent);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }

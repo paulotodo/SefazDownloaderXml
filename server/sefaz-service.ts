@@ -14,6 +14,7 @@ import {
   estaBloqueado, 
   criarBloqueio 
 } from "./utils/timezone";
+import { xmlStorageService } from "./xml-storage";
 
 const UF_CODE_MAP: Record<string, number> = {
   AC: 12, AL: 27, AM: 13, AP: 16, BA: 29, CE: 23,
@@ -359,21 +360,21 @@ export class SefazService {
     const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
     const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
 
-    const destDir = path.join(this.xmlDestPath, tipoDoc, empresa.cnpj, `${ano}`, mes);
-    await fs.mkdir(destDir, { recursive: true });
-
     const filename = `${parseInt(numeroNF)}.xml`;
-    const filepath = path.join(destDir, filename);
+    const relativePath = path.join(tipoDoc, empresa.cnpj, `${ano}`, mes, filename);
 
-    console.log(`[Salvamento] Salvando XML: ${filepath}`);
+    console.log(`[Salvamento] Salvando XML: ${relativePath} (${empresa.tipoArmazenamento})`);
     console.log(`[Salvamento] Tamanho do conteúdo: ${xmlContent.length} caracteres`);
-    console.log(`[Salvamento] Primeiros 200 chars: ${xmlContent.substring(0, 200)}`);
-    console.log(`[Salvamento] Últimos 100 chars: ${xmlContent.substring(xmlContent.length - 100)}`);
     
-    await fs.writeFile(filepath, xmlContent, "utf-8");
-    const stats = await fs.stat(filepath);
+    // Salva usando storage híbrido (local ou supabase)
+    const caminhoCompleto = await xmlStorageService.saveXml(
+      empresa.tipoArmazenamento,
+      relativePath,
+      xmlContent
+    );
     
-    console.log(`[Salvamento] Arquivo salvo: ${stats.size} bytes`);
+    const tamanhoBytes = Buffer.byteLength(xmlContent, "utf-8");
+    console.log(`[Salvamento] Arquivo salvo: ${tamanhoBytes} bytes em ${caminhoCompleto}`);
 
     await storage.createXml({
       userId: empresa.userId,
@@ -384,8 +385,8 @@ export class SefazService {
       modelo: modelo.toString(),
       tipoDocumento: "nfeProc",
       dataEmissao,
-      caminhoArquivo: filepath,
-      tamanhoBytes: stats.size,
+      caminhoArquivo: caminhoCompleto,
+      tamanhoBytes,
     });
 
     await storage.createLog({
@@ -396,10 +397,10 @@ export class SefazService {
       mensagem: `XML salvo: ${tipoDoc} ${numeroNF}`,
       detalhes: JSON.stringify({ 
         chNFe, 
-        filepath, 
+        caminhoArquivo: caminhoCompleto,
         modelo,
-        tamanhoBytes: stats.size,
-        tamanhoConteudo: xmlContent.length
+        tamanhoBytes,
+        tipoArmazenamento: empresa.tipoArmazenamento
       }),
     });
   }
@@ -452,14 +453,15 @@ export class SefazService {
     const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
     const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
 
-    const destDir = path.join(this.xmlDestPath, tipoDoc, empresa.cnpj, `${ano}`, mes, "Resumos");
-    await fs.mkdir(destDir, { recursive: true });
-
     const filename = `${chNFe}_nsu${nsu}.xml`;
-    const filepath = path.join(destDir, filename);
+    const relativePath = path.join(tipoDoc, empresa.cnpj, `${ano}`, mes, "Resumos", filename);
 
-    await fs.writeFile(filepath, xmlContent, "utf-8");
-    const stats = await fs.stat(filepath);
+    const caminhoCompleto = await xmlStorageService.saveXml(
+      empresa.tipoArmazenamento,
+      relativePath,
+      xmlContent
+    );
+    const tamanhoBytes = Buffer.byteLength(xmlContent, "utf-8");
 
     await storage.createXml({
       userId: empresa.userId,
@@ -470,8 +472,8 @@ export class SefazService {
       modelo: modelo.toString(),
       tipoDocumento: "resNFe",
       dataEmissao,
-      caminhoArquivo: filepath,
-      tamanhoBytes: stats.size,
+      caminhoArquivo: caminhoCompleto,
+      tamanhoBytes,
     });
 
     await storage.createLog({
@@ -480,7 +482,7 @@ export class SefazService {
       sincronizacaoId,
       nivel: "info",
       mensagem: `Resumo salvo: ${tipoDoc} (resNFe)`,
-      detalhes: JSON.stringify({ chNFe, filepath, modelo, nsu }),
+      detalhes: JSON.stringify({ chNFe, caminhoArquivo: caminhoCompleto, modelo, nsu }),
     });
   }
 
@@ -532,14 +534,15 @@ export class SefazService {
     const modelo = chNFe.substring(20, 22) || "55";
     const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
 
-    const destDir = path.join(this.xmlDestPath, tipoDoc, empresa.cnpj, `${ano}`, mes, "Eventos");
-    await fs.mkdir(destDir, { recursive: true });
-
     const filename = `${chNFe}_${tpEvento}_seq${nSeqEvento}_nsu${nsu}.xml`;
-    const filepath = path.join(destDir, filename);
+    const relativePath = path.join(tipoDoc, empresa.cnpj, `${ano}`, mes, "Eventos", filename);
 
-    await fs.writeFile(filepath, xmlContent, "utf-8");
-    const stats = await fs.stat(filepath);
+    const caminhoCompleto = await xmlStorageService.saveXml(
+      empresa.tipoArmazenamento,
+      relativePath,
+      xmlContent
+    );
+    const tamanhoBytes = Buffer.byteLength(xmlContent, "utf-8");
 
     await storage.createXml({
       userId: empresa.userId,
@@ -550,8 +553,8 @@ export class SefazService {
       modelo: modelo.toString(),
       tipoDocumento: "procEventoNFe",
       dataEmissao,
-      caminhoArquivo: filepath,
-      tamanhoBytes: stats.size,
+      caminhoArquivo: caminhoCompleto,
+      tamanhoBytes,
     });
 
     await storage.createLog({
@@ -560,7 +563,7 @@ export class SefazService {
       sincronizacaoId,
       nivel: "info",
       mensagem: `Evento salvo: ${tipoDoc} (${this.getTipoEventoDescricao(tpEvento)})`,
-      detalhes: JSON.stringify({ chNFe, tpEvento, filepath, nsu }),
+      detalhes: JSON.stringify({ chNFe, tpEvento, caminhoArquivo: caminhoCompleto, nsu }),
     });
   }
 
@@ -609,14 +612,15 @@ export class SefazService {
     const modelo = chNFe.substring(20, 22) || "55";
     const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
 
-    const destDir = path.join(this.xmlDestPath, tipoDoc, empresa.cnpj, `${ano}`, mes, "Eventos", "Resumos");
-    await fs.mkdir(destDir, { recursive: true });
-
     const filename = `${chNFe}_${tpEvento}_nsu${nsu}.xml`;
-    const filepath = path.join(destDir, filename);
+    const relativePath = path.join(tipoDoc, empresa.cnpj, `${ano}`, mes, "Eventos", "Resumos", filename);
 
-    await fs.writeFile(filepath, xmlContent, "utf-8");
-    const stats = await fs.stat(filepath);
+    const caminhoCompleto = await xmlStorageService.saveXml(
+      empresa.tipoArmazenamento,
+      relativePath,
+      xmlContent
+    );
+    const tamanhoBytes = Buffer.byteLength(xmlContent, "utf-8");
 
     await storage.createXml({
       userId: empresa.userId,
@@ -627,8 +631,8 @@ export class SefazService {
       modelo: modelo.toString(),
       tipoDocumento: "resEvento",
       dataEmissao,
-      caminhoArquivo: filepath,
-      tamanhoBytes: stats.size,
+      caminhoArquivo: caminhoCompleto,
+      tamanhoBytes,
     });
 
     await storage.createLog({
@@ -637,7 +641,7 @@ export class SefazService {
       sincronizacaoId,
       nivel: "info",
       mensagem: `Resumo de evento salvo: ${tipoDoc} (${this.getTipoEventoDescricao(tpEvento)})`,
-      detalhes: JSON.stringify({ chNFe, tpEvento, filepath, nsu }),
+      detalhes: JSON.stringify({ chNFe, tpEvento, caminhoArquivo: caminhoCompleto, nsu }),
     });
   }
 

@@ -27,6 +27,8 @@ export const empresas = pgTable("empresas", {
   ativo: boolean("ativo").notNull().default(true),
   ultimoNSU: text("ultimo_nsu").notNull().default("000000000000000"),
   bloqueadoAte: timestamp("bloqueado_ate", { withTimezone: true, mode: 'date' }), // Bloqueio temporário SEFAZ (cStat 656) até este timestamp (UTC)
+  tipoArmazenamento: text("tipo_armazenamento").notNull().default("local"), // "local" (filesystem) ou "supabase" (Supabase Storage)
+  manifestacaoAutomatica: boolean("manifestacao_automatica").notNull().default(true), // Manifestar automaticamente com evento 210210 (Ciência)
   createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
@@ -37,6 +39,8 @@ export const insertEmpresaSchema = createInsertSchema(empresas, {
   uf: z.string().length(2, "UF deve ter 2 caracteres"),
   ambiente: z.enum(["prod", "hom"]),
   certificadoSenha: z.string().min(1, "Senha do certificado é obrigatória"),
+  tipoArmazenamento: z.enum(["local", "supabase"]).optional(),
+  manifestacaoAutomatica: z.boolean().optional(),
 }).omit({
   id: true,
   userId: true, // Preenchido pelo backend baseado no usuário autenticado
@@ -119,6 +123,38 @@ export const insertLogSchema = createInsertSchema(logs).omit({
 export type InsertLog = z.infer<typeof insertLogSchema>;
 export type Log = typeof logs.$inferSelect;
 
+// Tabela de Manifestações do Destinatário (NT 2020.001)
+export const manifestacoes = pgTable("manifestacoes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(), // references auth.users(id)
+  empresaId: uuid("empresa_id").notNull().references(() => empresas.id, { onDelete: "cascade" }),
+  chaveNFe: text("chave_nfe").notNull(),
+  tipoEvento: text("tipo_evento").notNull(), // "210200" (Confirmação), "210210" (Ciência), "210220" (Desconhecimento), "210240" (Operação Não Realizada)
+  status: text("status").notNull().default("pendente"), // "pendente", "enviado", "confirmado", "erro", "expirado"
+  dataAutorizacaoNFe: timestamp("data_autorizacao_nfe", { withTimezone: true, mode: 'date' }).notNull(), // Data de autorização da NF-e
+  dataManifestacao: timestamp("data_manifestacao", { withTimezone: true, mode: 'date' }), // Data em que o evento foi enviado à SEFAZ
+  prazoLegal: timestamp("prazo_legal", { withTimezone: true, mode: 'date' }).notNull(), // Prazo limite para manifestar (calculado conforme NT 2020.001 §4)
+  nsuEvento: text("nsu_evento"), // NSU do evento de manifestação quando retornado pela SEFAZ
+  protocoloEvento: text("protocolo_evento"), // Protocolo de autorização do evento
+  cStat: text("c_stat"), // Código de status de retorno da SEFAZ
+  xMotivo: text("x_motivo"), // Descrição do status de retorno
+  justificativa: text("justificativa"), // Justificativa (obrigatória para 210220 e 210240)
+  tentativas: integer("tentativas").notNull().default(0), // Contador de tentativas de envio
+  ultimoErro: text("ultimo_erro"), // Mensagem do último erro
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
+export const insertManifestacaoSchema = createInsertSchema(manifestacoes).omit({
+  id: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertManifestacao = z.infer<typeof insertManifestacaoSchema>;
+export type Manifestacao = typeof manifestacoes.$inferSelect;
+
 // Schema para upload de certificado (multipart form)
 export const uploadCertificadoSchema = z.object({
   cnpj: z.string().regex(/^\d{14}$/, "CNPJ deve conter 14 dígitos"),
@@ -153,3 +189,41 @@ export const loginSchema = z.object({
 
 export type RegisterData = z.infer<typeof registerSchema>;
 export type LoginData = z.infer<typeof loginSchema>;
+
+// Schema para manifestação manual
+export const manifestacaoManualSchema = z.object({
+  chaveNFe: z.string().length(44, "Chave de acesso deve ter 44 caracteres"),
+  tipoEvento: z.enum(["210200", "210210", "210220", "210240"], {
+    errorMap: () => ({ message: "Tipo de evento inválido" })
+  }),
+  justificativa: z.string().min(15, "Justificativa deve ter no mínimo 15 caracteres").optional(),
+}).refine(
+  (data) => {
+    // Justificativa é obrigatória para Desconhecimento (210220) e Operação Não Realizada (210240)
+    if ((data.tipoEvento === "210220" || data.tipoEvento === "210240") && !data.justificativa) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "Justificativa é obrigatória para eventos de Desconhecimento e Operação Não Realizada",
+    path: ["justificativa"],
+  }
+);
+
+export type ManifestacaoManual = z.infer<typeof manifestacaoManualSchema>;
+
+// Tipos de Evento de Manifestação (NT 2020.001 §3)
+export const TIPOS_EVENTO_MANIFESTACAO = {
+  CONFIRMACAO_OPERACAO: "210200",
+  CIENCIA_OPERACAO: "210210",
+  DESCONHECIMENTO_OPERACAO: "210220",
+  OPERACAO_NAO_REALIZADA: "210240",
+} as const;
+
+export const DESCRICAO_EVENTOS_MANIFESTACAO: Record<string, string> = {
+  "210200": "Confirmação da Operação",
+  "210210": "Ciência da Operação",
+  "210220": "Desconhecimento da Operação",
+  "210240": "Operação não Realizada",
+};

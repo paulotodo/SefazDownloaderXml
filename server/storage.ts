@@ -7,6 +7,8 @@ import {
   type InsertXml,
   type Log,
   type InsertLog,
+  type Manifestacao,
+  type InsertManifestacao,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -38,6 +40,16 @@ export interface IStorage {
   getLogs(userId?: string): Promise<Log[]>;
   createLog(log: InsertLog & { userId?: string }): Promise<Log>;
   getLogsRecentes(limit?: number, userId?: string): Promise<Log[]>;
+
+  // Manifestações do Destinatário (NT 2020.001)
+  getManifestacoes(userId?: string): Promise<Manifestacao[]>;
+  getManifestacao(id: string, userId?: string): Promise<Manifestacao | null>;
+  getManifestacaoByChave(chaveNFe: string, userId?: string): Promise<Manifestacao | null>;
+  getManifestacoesByEmpresa(empresaId: string, userId?: string): Promise<Manifestacao[]>;
+  getManifestacoesPendentes(empresaId: string, userId?: string): Promise<Manifestacao[]>;
+  createManifestacao(manifestacao: InsertManifestacao & { userId: string }): Promise<Manifestacao>;
+  updateManifestacao(id: string, updates: Partial<Manifestacao>, userId?: string): Promise<Manifestacao | null>;
+  getManifestacoesRecentes(limit?: number, userId?: string): Promise<Manifestacao[]>;
 }
 
 // Exporta SupabaseStorage como implementação única
