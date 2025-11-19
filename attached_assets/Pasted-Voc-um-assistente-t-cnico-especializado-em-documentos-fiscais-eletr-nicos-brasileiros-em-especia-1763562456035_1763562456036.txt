@@ -1,0 +1,199 @@
+Você é um assistente técnico especializado em documentos fiscais eletrônicos brasileiros, em especial:
+
+- Nota Fiscal Eletrônica – NF-e (modelo 55)
+- Nota Fiscal de Consumidor Eletrônica – NFC-e (modelo 65)
+- Web Service NFeDistribuicaoDFe (Distribuição de DF-e de Interesse dos Atores da NF-e)
+- Web Service NFeRecepcaoEvento (registro de eventos, incluindo Manifestação do Destinatário)
+
+Quero que você ANALISE e ADAPTE o aplicativo já existente neste Repl para implementar, de forma robusta, um sistema de:
+
+> 1) Download automático e sob demanda de XMLs de NF-e e NFC-e emitidas contra o meu CNPJ usando NFeDistribuicaoDFe;  
+> 2) Manifestação automática do destinatário, seguindo as regras e prazos da NT 2020.001;  
+> 3) Controle de NSU, respeito às regras de consumo e armazenamento estruturado dos arquivos.
+
+Toda a implementação deve seguir estritamente a documentação oficial abaixo (links em PDF):
+
+1) Manual de Orientação do Contribuinte – MOC 7.0 – Visão Geral (NF-e / NFC-e)
+   - https://www.confaz.fazenda.gov.br/legislacao/arquivo-manuais/moc7-visao-geral.pdf
+
+2) MOC 7.0 – Anexo I – Leiaute NF-e/NFC-e e Regras de Validação (opcional, mas útil para leiautes)
+   - Exemplo de espelho: https://pt.slideshare.net/slideshow/anexo-i-leiaute-e-regra-de-validao-nfe-e-nfcepdf/267089784
+
+3) Nota Técnica 2014.002 – Web Service de Distribuição de DF-e de Interesse dos Atores da NF-e
+   - Versão 1.02c (base técnica): https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=155Wx5%2FJB5A%3D
+   - Descrição do Processo de Distribuição de DF-e: https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=C%2FxkRclIh74%3D
+   - Versões 1.13, 1.14 e 1.15 (atualizações): https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=VgPuhtPApQo%3D
+
+4) Nota Técnica 2020.001 – Evento de Manifestação do Destinatário (versão mais recente)
+   - Versão 1.50 – Março/2024: https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=G2gXyQBCCZQ%3D
+
+5) Manual do Aplicativo de Manifestação do Destinatário – SEFAZ/SP (referência prática de uso)
+   - https://www.mde.fazenda.sp.gov.br/docs/manual.pdf
+
+-------------------------------------------------------------------------------
+1. CONTEXTO DO APLICATIVO
+-------------------------------------------------------------------------------
+
+- O app já existe neste Repl.
+- A linguagem principal é a que já estiver usando.
+- Ele deve suportar:
+  a) Execução AUTOMÁTICA via “job agendado” (loop com intervalos controlados).
+  b) Execução MANUAL (chamada única sob demanda).
+
+- O certificado digital utilizado será SEMPRE:
+  - Tipo: A1 (arquivo)
+  - Associado ao CNPJ base de interesse.
+
+OBJETIVO FINAL (alta visão):
+
+- Sincronizar continuamente, via NFeDistribuicaoDFe, todos os DF-e (NF-e/NFC-e/eventos) de interesse do meu CNPJ (destinatário);  
+- Registrar, de forma automática, eventos de Manifestação do Destinatário conforme NT 2020.001;  
+- Após a manifestação, garantir o download do XML completo quando permitido, seguindo as regras de sigilo do MOC/NT.
+
+-------------------------------------------------------------------------------
+2. FUNCIONALIDADES OBRIGATÓRIAS – DISTRIBUIÇÃO (distNSU/consNSU/consChNFe)
+-------------------------------------------------------------------------------
+
+(1) Consumir o Web Service NFeDistribuicaoDFe
+
+- Implementar o XML de requisição distDFeInt com as três formas previstas na NT 2014.002:
+  a) distNSU – principal para sincronização em lote;
+  b) consNSU – para NSUs faltantes;
+  c) consChNFe – para consultas pontuais por chave.
+- Assinar/autenticar a requisição conforme MOC 7.0 e NT 2014.002, utilizando o certificado A1.
+
+(2) Implementar completamente o fluxo distNSU
+
+- Ler de um armazenamento persistente (arquivo/banco) o último NSU processado (ultNSU_local) por CNPJ base.
+- Montar requisições distNSU com este ultNSU_local.
+- Processar retDistDFeInt:
+  - Interpretar cStat (137, 138, 656, etc.).
+  - Atualizar ultNSU e maxNSU.
+  - Descompactar cada docZip (GZip + Base64).
+  - Identificar o tipo:
+    * resNFe (resumo NF-e)
+    * procNFe (NF-e completa)
+    * resEvento / procEvento (eventos de NF-e, inclusive manifestos, cancelamento, etc.)
+  - Salvar os documentos em disco de forma organizada.
+
+(3) Organização do armazenamento
+
+- Separar por tipo/modelo e período, por exemplo:
+  - ./xml/NFe/[ANO]/[MES]/[CNPJ]/[CHAVE].xml
+  - ./xml/NFCe/[ANO]/[MES]/[CNPJ]/[CHAVE].xml
+  - ./xml/Eventos/[ANO]/[MES]/[CNPJ]/[COD_EVENTO]_[CHAVE].xml
+- Evitar reprocessamento de documentos já armazenados.
+
+(4) Suporte a NF-e (55) e NFC-e (65)
+
+- Identificar o modelo no XML/resumo.
+- Armazenar em estruturas distintas conforme modelo (55 x 65).
+
+(5) Controle de NSU e Regras de Consumo
+
+- Manter estrutura com:
+  - CNPJ base
+  - ultNSU
+  - maxNSU
+  - data/hora da última consulta
+  - flags/horários de consumo indevido (cStat=656) ou “sem novos documentos” (cStat=137).
+- Respeitar regras de consumo:
+  - Não repetir distNSU constantemente quando ultNSU == maxNSU.
+  - Honrar janelas de espera após consumo indevido.
+  - Para consNSU/consChNFe, considerar limites de consultas por hora conforme NT 2014.002.
+
+-------------------------------------------------------------------------------
+3. FUNCIONALIDADES OBRIGATÓRIAS – MANIFESTAÇÃO DO DESTINATÁRIO
+-------------------------------------------------------------------------------
+
+Além de baixar resumos/DF-e, o app deve IMPLEMENTAR e ORQUESTRAR a Manifestação do Destinatário (MD-e) conforme MOC 7.0 + NT 2020.001:
+
+(1) Eventos de Manifestação a suportar
+
+Conforme MOC 7.0 e NT 2020.001, estes são os eventos de Manifestação do Destinatário: 
+- O app deve, portanto:
+  - Após registrar um evento de manifestação, aguardar a propagação (próxima execução do job).
+  - Em execuções futuras do distNSU:
+    * Detectar o NSU do evento e/ou do XML completo da NF-e correspondente.
+    * Baixar o procNFe e armazenar em local definitivo (substituindo ou complementando o resumo).
+
+(5) Prazos legais e controle de status
+
+- A NT 2020.001 define prazos para cada tipo de manifestação (ex.: prazo para Ciência da Emissão, Confirmação, Desconhecimento, Operação Não Realizada).  
+- O app deve:
+  - Armazenar a data de autorização da NF-e (a partir do resumo ou do XML).
+  - Armazenar o tipo e a data do último evento de manifestação registrado para cada NF-e.
+  - Expor essas informações de forma que futuras automações possam:
+    * Identificar notas que ainda precisam de manifestação conclusiva.
+    * Evitar manifestação fora do prazo legal (apenas registrar tentativa e erro).
+
+(6) Segurança e Configurabilidade
+
+- Não “fixar” regras de negócio de manifestação no código-fonte.
+- Expor parâmetros de política de manifestação via configuração:
+  - se vai manifestar automaticamente todas as notas;
+  - se vai manifestar apenas notas acima de determinado valor;
+  - se vai usar sempre 210210 na automação e deixar 210200/210220/210240 para decisão manual.
+
+-------------------------------------------------------------------------------
+4. MODOS DE EXECUÇÃO (JOB + MANUAL)
+-------------------------------------------------------------------------------
+
+- MODO JOB AGENDADO:
+  - Loop principal que roda a cada X minutos (configurável).
+  - Em cada ciclo:
+    1) Executar fluxo distNSU até ultNSU ≈ maxNSU, respeitando limites de consumo.
+    2) Rodar fluxo de manifestação automática (se habilitado), respeitando janelas e prazos.
+    3) Registrar logs (quantidade de notas novas, eventos de manifestação enviados, erros, etc.).
+
+- MODO MANUAL:
+  - Entry point (ex.: `main --run-once` ou endpoint HTTP único) que:
+    1) Faz uma rodada de distNSU.
+    2) Opcionalmente dispara a manifestação automática (se habilitada).
+    3) Atualiza NSUs, salva XMLs e encerra.
+
+-------------------------------------------------------------------------------
+5. CONFIGURAÇÕES E LOGS
+-------------------------------------------------------------------------------
+
+- Centralizar tudo em .env/config:
+  - CNPJ_BASE
+  - AMBIENTE (homologação/produção)
+  - CERT_A1_CAMINHO, CERT_A1_SENHA
+  - INTERVALO_JOB_MINUTOS
+  - AUTO_MANIFESTACAO_HABILITADA (true/false)
+  - TIPO_EVENTO_AUTOMATICO (default: 210210)
+  - OUTROS PARÂMETROS DE POLÍTICA (threshold de valor, etc.)
+
+- Logs:
+  - Registrar:
+    * data/hora de cada execução;
+    * número de documentos obtidos via distNSU;
+    * NSUs processados (ultNSU, maxNSU);
+    * eventos de manifestação enviados (tpEvento, chNFe, cStat);
+    * erros, exceções de rede/certificado;
+  - Exibir no console do Replit e gravar em arquivo (ex.: ./logs/app.log).
+
+-------------------------------------------------------------------------------
+6. CONFORMIDADE E INTERAÇÃO COMIGO
+-------------------------------------------------------------------------------
+
+Toda decisão de implementação deve ser compatível com:
+
+- MOC 7.0 – Visão Geral (NF-e/NFC-e), especialmente a seção de eventos de Manifestação do Destinatário.
+- NT 2014.002 – Distribuição de DF-e (distNSU, consNSU, consChNFe, NSU, consumo indevido).
+- NT 2020.001 – Evento de Manifestação do Destinatário (códigos de evento, prazos, relação com liberação do XML para download).
+
+Sempre que houver dúvida, adote o comportamento mais aderente e conservador à legislação.
+
+COMO VOCÊ DEVE INTERAGIR COMIGO:
+
+1) Primeiro, me explique como o código atual está organizado (arquivos, módulos, libs) e se já usa NFeDistribuicaoDFe ou NFeRecepcaoEvento.
+2) Depois, proponha um plano em etapas (distNSU, NSU, armazenamento, manifestação automática, modos de execução, logs).
+3) Em seguida, implemente etapa por etapa, sempre mostrando o código alterado e indicando qual requisito foi atendido.
+4) Ao final, gere um README.md com:
+   - Como configurar CNPJ, ambiente, certificado A1.
+   - Como rodar em modo manual.
+   - Como deixar o job agendado.
+   - Como funciona a manifestação automática.
+   - Onde ficam XMLs e logs.
