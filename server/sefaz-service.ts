@@ -29,6 +29,21 @@ const ENDPOINTS = {
   hom: "https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx",
 };
 
+// Endpoints para NFeRecepcaoEvento (Manifestação do Destinatário)
+// NT 2020.001: Usa SEFAZ Virtual RS para todos os Estados
+const ENDPOINTS_RECEPCAO_EVENTO = {
+  prod: "https://nfe.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx",
+  hom: "https://nfe-homologacao.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx",
+};
+
+// Tipos de Evento de Manifestação do Destinatário (NT 2020.001)
+export const TIPOS_MANIFESTACAO = {
+  CONFIRMACAO: "210200", // Confirmação da Operação
+  CIENCIA: "210210",     // Ciência da Operação
+  DESCONHECIMENTO: "210220", // Desconhecimento da Operação
+  NAO_REALIZADA: "210240",   // Operação não Realizada
+} as const;
+
 interface SefazResponse {
   cStat: string;
   xMotivo: string;
@@ -119,6 +134,194 @@ export class SefazService {
 </soap12:Envelope>`;
   }
 
+  /**
+   * Monta SOAP envelope para consulta por chave de acesso (consChNFe)
+   * Conforme NT 2014.002 §3.6
+   * 
+   * IMPORTANTE: Usa <consChNFe> para buscar XML completo por chave
+   * - Permite baixar nfeProc quando só temos resNFe (resumo)
+   * - Essencial para manifestação do destinatário (só pode manifestar com XML completo)
+   * 
+   * @param cnpj - CNPJ da empresa
+   * @param uf - UF de autorização (ex: 'SP', 'MG')
+   * @param ambiente - Ambiente ('producao' ou 'homologacao')
+   * @param chaveNFe - Chave de acesso de 44 dígitos da NF-e/NFC-e
+   */
+  private buildSOAPEnvelopeConsChNFe(cnpj: string, uf: string, ambiente: string, chaveNFe: string): string {
+    const cufAutor = UF_CODE_MAP[uf.toUpperCase()] || 35;
+    const tpAmb = ambiente.toLowerCase().startsWith("prod") ? "1" : "2";
+
+    if (!chaveNFe || chaveNFe.length !== 44) {
+      throw new Error(`Chave de acesso inválida: ${chaveNFe} (deve ter 44 dígitos)`);
+    }
+
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"
+                 xmlns:nfe="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+  <soap12:Body>
+    <nfe:nfeDistDFeInteresse>
+      <nfe:nfeDadosMsg>
+        <distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+          <tpAmb>${tpAmb}</tpAmb>
+          <cUFAutor>${cufAutor}</cUFAutor>
+          <CNPJ>${cnpj}</CNPJ>
+          <consChNFe><chNFe>${chaveNFe}</chNFe></consChNFe>
+        </distDFeInt>
+      </nfe:nfeDadosMsg>
+    </nfe:nfeDistDFeInteresse>
+  </soap12:Body>
+</soap12:Envelope>`;
+  }
+
+  /**
+   * Retorna descrição do evento conforme tipo de manifestação (NT 2020.001)
+   */
+  private getTipoEventoDescricao(tpEvento: string): string {
+    switch (tpEvento) {
+      case TIPOS_MANIFESTACAO.CONFIRMACAO:
+        return "Confirmacao da Operacao";
+      case TIPOS_MANIFESTACAO.CIENCIA:
+        return "Ciencia da Operacao";
+      case TIPOS_MANIFESTACAO.DESCONHECIMENTO:
+        return "Desconhecimento da Operacao";
+      case TIPOS_MANIFESTACAO.NAO_REALIZADA:
+        return "Operacao nao Realizada";
+      default:
+        throw new Error(`Tipo de evento inválido: ${tpEvento}`);
+    }
+  }
+
+  /**
+   * Monta SOAP envelope para Manifestação do Destinatário (NFeRecepcaoEvento v4.00)
+   * Conforme NT 2020.001
+   * 
+   * Eventos disponíveis:
+   * - 210200: Confirmação da Operação
+   * - 210210: Ciência da Operação (manifestação automática padrão)
+   * - 210220: Desconhecimento da Operação
+   * - 210240: Operação não Realizada (requer justificativa)
+   * 
+   * @param cnpj - CNPJ do destinatário manifestante
+   * @param chaveNFe - Chave de acesso de 44 dígitos da NF-e
+   * @param tpEvento - Tipo de evento (210200, 210210, 210220, 210240)
+   * @param nSeqEvento - Número sequencial do evento (sempre 1 para manifestação)
+   * @param ambiente - Ambiente ('producao' ou 'homologacao')
+   * @param justificativa - Justificativa (obrigatória para 210240, opcional para outros)
+   */
+  private buildSOAPEnvelopeManifestacao(
+    cnpj: string,
+    chaveNFe: string,
+    tpEvento: string,
+    nSeqEvento: number,
+    ambiente: string,
+    justificativa?: string
+  ): string {
+    const tpAmb = ambiente.toLowerCase().startsWith("prod") ? "1" : "2";
+    
+    if (!chaveNFe || chaveNFe.length !== 44) {
+      throw new Error(`Chave de acesso inválida: ${chaveNFe} (deve ter 44 dígitos)`);
+    }
+
+    // NT 2020.001: 210240 (Operação não Realizada) requer justificativa (min 15 caracteres)
+    if (tpEvento === TIPOS_MANIFESTACAO.NAO_REALIZADA) {
+      if (!justificativa || justificativa.length < 15) {
+        throw new Error("Evento 210240 (Operação não Realizada) requer justificativa de no mínimo 15 caracteres");
+      }
+    }
+
+    // Data/hora do evento em horário de Brasília com offset dinâmico
+    // Formato: YYYY-MM-DDTHH:MM:SS±HH:MM (ex: 2025-11-19T14:30:00-03:00)
+    // CORREÇÃO DEFINITIVA: Usa timeZoneName:'shortOffset' para obter offset real
+    const now = new Date();
+    
+    // Formata data/hora em timezone America/Sao_Paulo
+    const brasiliaFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    
+    const parts = brasiliaFormatter.formatToParts(now);
+    const partsMap = parts.reduce((acc, part) => {
+      if (part.type !== 'literal') acc[part.type] = part.value;
+      return acc;
+    }, {} as Record<string, string>);
+    
+    // Obtém offset dinâmico usando timeZoneName:'shortOffset' (ex: "GMT-3")
+    const offsetFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      timeZoneName: 'shortOffset',
+    });
+    
+    const offsetParts = offsetFormatter.formatToParts(now);
+    const offsetPart = offsetParts.find(p => p.type === 'timeZoneName');
+    let offsetStr = '-03:00'; // Fallback padrão para Brasília
+    
+    if (offsetPart && offsetPart.value.startsWith('GMT')) {
+      // Converte "GMT-3" ou "GMT+0" para formato "±HH:MM"
+      const offsetMatch = offsetPart.value.match(/GMT([+-])(\d+)/);
+      if (offsetMatch) {
+        const sign = offsetMatch[1];
+        const hours = offsetMatch[2].padStart(2, '0');
+        offsetStr = `${sign}${hours}:00`;
+      }
+    }
+    
+    // Monta timestamp final: YYYY-MM-DDTHH:MM:SS±HH:MM
+    const dhEvento = `${partsMap.year}-${partsMap.month}-${partsMap.day}T${partsMap.hour}:${partsMap.minute}:${partsMap.second}${offsetStr}`;
+
+    // ID do evento: "ID" + tpEvento + chNFe + nSeqEvento (2 dígitos)
+    const idEvento = `ID${tpEvento}${chaveNFe}${nSeqEvento.toString().padStart(2, "0")}`;
+
+    // Descrição do evento conforme tipo
+    const descEvento = this.getTipoEventoDescricao(tpEvento);
+
+    // XML do evento (detEvento)
+    let detEventoXML = `<detEvento versao="1.00">
+      <descEvento>${descEvento}</descEvento>`;
+    
+    if (justificativa) {
+      detEventoXML += `
+      <xJust>${justificativa}</xJust>`;
+    }
+    
+    detEventoXML += `
+    </detEvento>`;
+
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                 xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+  <soap12:Body>
+    <nfeRecepcaoEvento xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
+      <nfeDadosMsg>
+        <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+          <idLote>1</idLote>
+          <evento versao="1.00">
+            <infEvento Id="${idEvento}">
+              <cOrgao>91</cOrgao>
+              <tpAmb>${tpAmb}</tpAmb>
+              <CNPJ>${cnpj}</CNPJ>
+              <chNFe>${chaveNFe}</chNFe>
+              <dhEvento>${dhEvento}</dhEvento>
+              <tpEvento>${tpEvento}</tpEvento>
+              <nSeqEvento>${nSeqEvento}</nSeqEvento>
+              <verEvento>1.00</verEvento>
+              ${detEventoXML}
+            </infEvento>
+          </evento>
+        </envEvento>
+      </nfeDadosMsg>
+    </nfeRecepcaoEvento>
+  </soap12:Body>
+</soap12:Envelope>`;
+  }
+
   private async callDistDFe(
     empresa: Empresa,
     envelope: string
@@ -162,6 +365,74 @@ export class SefazService {
             "Content-Type": "application/soap+xml; charset=utf-8; action=\"http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse\"",
             "Content-Length": Buffer.byteLength(envelope),
             "SOAPAction": "http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse",
+          },
+          agent,
+        };
+
+        const req = https.request(options, (res) => {
+          let data = "";
+          res.on("data", (chunk) => (data += chunk));
+          res.on("end", () => {
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            } else {
+              resolve(data);
+            }
+          });
+        });
+
+        req.on("error", (error) => {
+          reject(new Error(`Erro na requisição HTTPS: ${error.message}`));
+        });
+
+        req.write(envelope);
+        req.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Envia requisição SOAP para NFeRecepcaoEvento (Manifestação do Destinatário)
+   * Conforme NT 2020.001
+   */
+  private async callRecepcaoEvento(
+    empresa: Empresa,
+    envelope: string
+  ): Promise<string> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const url = new URL(ENDPOINTS_RECEPCAO_EVENTO[empresa.ambiente as "prod" | "hom"]);
+
+        let certData;
+        try {
+          certData = await loadPKCS12Certificate(
+            empresa.certificadoPath,
+            empresa.certificadoSenha
+          );
+        } catch (error: any) {
+          throw error;
+        }
+
+        const agent = new https.Agent({
+          key: certData.key,
+          cert: certData.cert,
+          ca: certData.ca.length > 0 ? certData.ca : undefined,
+          rejectUnauthorized: true,
+          secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+          minVersion: 'TLSv1.2' as any,
+          maxVersion: 'TLSv1.3' as any,
+        });
+
+        const options: https.RequestOptions = {
+          hostname: url.hostname,
+          port: 443,
+          path: url.pathname,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/soap+xml; charset=utf-8",
+            "Content-Length": Buffer.byteLength(envelope),
           },
           agent,
         };
@@ -658,6 +929,167 @@ export class SefazService {
       "210240": "Operação não Realizada",
     };
     return tipos[tpEvento] || `Evento ${tpEvento}`;
+  }
+
+  /**
+   * Consulta NF-e/NFC-e por chave de acesso (consChNFe)
+   * Conforme NT 2014.002 §3.6
+   * 
+   * Uso: Baixar XML completo (nfeProc) quando só temos resumo (resNFe)
+   * Essencial para manifestação do destinatário
+   * 
+   * @param empresa - Dados da empresa
+   * @param chaveNFe - Chave de acesso de 44 dígitos
+   * @returns XML completo (nfeProc) ou null se não encontrado
+   */
+  async consultarChave(empresa: Empresa, chaveNFe: string): Promise<string | null> {
+    try {
+      console.log(`[consChNFe] Consultando chave ${chaveNFe} para empresa ${empresa.cnpj}`);
+
+      const envelope = this.buildSOAPEnvelopeConsChNFe(
+        empresa.cnpj,
+        empresa.uf,
+        empresa.ambiente,
+        chaveNFe
+      );
+
+      const responseXML = await this.callDistDFe(empresa, envelope);
+      const response = this.parseSOAPResponse(responseXML);
+
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        nivel: "info",
+        mensagem: `consChNFe: ${response.cStat} - ${response.xMotivo}`,
+        detalhes: JSON.stringify({ chaveNFe, cStat: response.cStat }),
+      });
+
+      // cStat 138: Documento localizado
+      if (response.cStat === "138" && response.docZips && response.docZips.length > 0) {
+        const docZip = response.docZips[0];
+        const xmlContent = this.decompressDocZip(docZip.content);
+        const parsed = this.parser.parse(xmlContent);
+
+        // Verifica se é nfeProc (XML completo)
+        if (parsed.nfeProc) {
+          console.log(`[consChNFe] XML completo encontrado para chave ${chaveNFe}`);
+          return xmlContent;
+        } else {
+          console.warn(`[consChNFe] Chave ${chaveNFe} retornou documento que não é nfeProc:`, Object.keys(parsed));
+          return null;
+        }
+      }
+
+      // cStat 656: Consumo indevido (já consultado antes)
+      // cStat 137: Nenhum documento encontrado
+      console.log(`[consChNFe] Chave ${chaveNFe} não retornou nfeProc (cStat=${response.cStat})`);
+      return null;
+    } catch (error) {
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        nivel: "error",
+        mensagem: `Erro em consChNFe: ${String(error)}`,
+        detalhes: JSON.stringify({ chaveNFe, error: String(error) }),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Manifestar evento do destinatário para NF-e (NFeRecepcaoEvento v4.00)
+   * Conforme NT 2020.001
+   * 
+   * @param empresa - Dados da empresa manifestante
+   * @param chaveNFe - Chave de acesso de 44 dígitos
+   * @param tpEvento - Tipo de evento (210200, 210210, 210220, 210240)
+   * @param justificativa - Justificativa (obrigatória para 210240)
+   * @returns Dados da manifestação registrada
+   */
+  async manifestarEvento(
+    empresa: Empresa,
+    chaveNFe: string,
+    tpEvento: string,
+    justificativa?: string
+  ): Promise<any> {
+    try {
+      console.log(`[Manifestação] Iniciando ${this.getTipoEventoDescricao(tpEvento)} para chave ${chaveNFe}`);
+
+      // Validação: 210240 requer justificativa
+      if (tpEvento === TIPOS_MANIFESTACAO.NAO_REALIZADA && (!justificativa || justificativa.length < 15)) {
+        throw new Error("Evento 210240 (Operação não Realizada) requer justificativa de no mínimo 15 caracteres");
+      }
+
+      // Monta envelope SOAP
+      const envelope = this.buildSOAPEnvelopeManifestacao(
+        empresa.cnpj,
+        chaveNFe,
+        tpEvento,
+        1, // nSeqEvento sempre 1 para primeira manifestação
+        empresa.ambiente,
+        justificativa
+      );
+
+      // Envia para SEFAZ
+      const responseXML = await this.callRecepcaoEvento(empresa, envelope);
+      const parsed = this.parser.parse(responseXML);
+
+      // Extrai retEvento da resposta
+      const envelope_soap = parsed["soap12:Envelope"] || parsed["soap:Envelope"] || parsed["Envelope"];
+      const body = envelope_soap?.["soap12:Body"] || envelope_soap?.["soap:Body"] || envelope_soap?.["Body"];
+      const recepcaoEventoResponse = body?.["nfeRecepcaoEventoResponse"] || body?.["nfeRecepcaoEventoResult"];
+      const retEnvEvento = recepcaoEventoResponse?.["retEnvEvento"];
+      const retEvento = retEnvEvento?.["retEvento"];
+
+      if (!retEvento || !retEvento.infEvento) {
+        throw new Error("Resposta SEFAZ inválida: retEvento não encontrado");
+      }
+
+      const infEvento = retEvento.infEvento;
+      const cStat = String(infEvento.cStat || "");
+      const xMotivo = String(infEvento.xMotivo || "");
+      const nProt = String(infEvento.nProt || "");
+      const dhRegEvento = String(infEvento.dhRegEvento || "");
+
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        nivel: "info",
+        mensagem: `Manifestação ${this.getTipoEventoDescricao(tpEvento)}: ${cStat} - ${xMotivo}`,
+        detalhes: JSON.stringify({ chaveNFe, tpEvento, cStat, nProt }),
+      });
+
+      // Cria/atualiza registro de manifestação
+      const manifestacao = await storage.createManifestacao({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        chaveNFe,
+        tipoEvento: tpEvento,
+        status: cStat === "135" ? "autorizado" : "rejeitado", // cStat 135 = Evento registrado
+        dataAutorizacaoNFe: null, // Será preenchido futuramente
+        dataManifestacao: new Date(),
+        prazoLegal: null, // Será calculado futuramente
+        nsuEvento: null,
+        protocoloEvento: nProt || null,
+        cStat,
+        xMotivo,
+        justificativa: justificativa || null,
+        tentativas: 1,
+        ultimoErro: cStat === "135" ? null : xMotivo,
+      });
+
+      console.log(`[Manifestação] ${cStat === "135" ? "✅ Sucesso" : "❌ Rejeitado"}: ${xMotivo}`);
+      return manifestacao;
+    } catch (error) {
+      await storage.createLog({
+        userId: empresa.userId,
+        empresaId: empresa.id,
+        nivel: "error",
+        mensagem: `Erro ao manifestar evento: ${String(error)}`,
+        detalhes: JSON.stringify({ chaveNFe, tpEvento, error: String(error) }),
+      });
+      throw error;
+    }
   }
 
   async sincronizarEmpresa(empresa: Empresa): Promise<number> {
