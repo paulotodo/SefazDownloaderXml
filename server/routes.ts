@@ -243,18 +243,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/empresas/:id", authenticateUser, async (req, res) => {
+  app.patch("/api/empresas/:id", authenticateUser, upload.single("certificado"), async (req, res) => {
     const userId = req.user!.id;
     try {
-      const updates = req.body;
-      const empresa = await storage.updateEmpresa(req.params.id, updates, userId);
+      const { updateEmpresaSchema } = await import("@shared/schema");
+      
+      // Validar dados de atualização
+      const updates = updateEmpresaSchema.parse({
+        razaoSocial: req.body.razaoSocial,
+        uf: req.body.uf,
+        ambiente: req.body.ambiente,
+        certificadoSenha: req.body.certificadoSenha,
+        tipoArmazenamento: req.body.tipoArmazenamento,
+        manifestacaoAutomatica: req.body.manifestacaoAutomatica === "true",
+        ativo: req.body.ativo === "true",
+      });
+
+      // Buscar empresa existente
+      const empresaExistente = await storage.getEmpresa(req.params.id, userId);
+      if (!empresaExistente) {
+        if (req.file) {
+          await fs.unlink(req.file.path).catch(console.error);
+        }
+        return res.status(404).json({ error: "Empresa não encontrada" });
+      }
+
+      const updateData: any = { ...updates };
+
+      // Se novo certificado foi enviado, validar e atualizar
+      if (req.file) {
+        const { validateCertificate } = await import("./cert-loader");
+        const senha = updates.certificadoSenha || empresaExistente.certificadoSenha;
+        const validation = await validateCertificate(req.file.path, senha);
+        
+        if (!validation.valid) {
+          await fs.unlink(req.file.path);
+          
+          if (validation.error?.includes('Senha do certificado incorreta')) {
+            return res.status(400).json({ 
+              error: "Senha do certificado incorreta. Verifique a senha e tente novamente." 
+            });
+          } else if (validation.isExpired) {
+            const notAfter = validation.notAfter || new Date();
+            return res.status(400).json({ 
+              error: `Certificado expirado em ${notAfter.toLocaleDateString('pt-BR')}. Renove seu certificado digital.` 
+            });
+          } else {
+            return res.status(400).json({ 
+              error: validation.error || "Certificado inválido. Verifique o arquivo e a senha." 
+            });
+          }
+        }
+
+        // Remover certificado antigo
+        try {
+          await fs.unlink(empresaExistente.certificadoPath);
+        } catch (error) {
+          console.error("Erro ao remover certificado antigo:", error);
+        }
+
+        updateData.certificadoPath = req.file.path;
+      }
+
+      const empresa = await storage.updateEmpresa(req.params.id, updateData, userId);
       
       if (!empresa) {
         return res.status(404).json({ error: "Empresa não encontrada" });
       }
 
+      await storage.createLog({
+        userId,
+        empresaId: empresa.id,
+        sincronizacaoId: null,
+        nivel: "info",
+        mensagem: `Empresa atualizada: ${empresa.razaoSocial}`,
+        detalhes: JSON.stringify({ 
+          cnpj: empresa.cnpj,
+          alteracoes: Object.keys(updates)
+        }),
+      });
+
       res.json(empresa);
     } catch (error) {
+      if (req.file) {
+        await fs.unlink(req.file.path).catch(console.error);
+      }
+
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
       res.status(500).json({ error: String(error) });
     }
   });

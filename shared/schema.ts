@@ -168,6 +168,19 @@ export const uploadCertificadoSchema = z.object({
 
 export type UploadCertificado = z.infer<typeof uploadCertificadoSchema>;
 
+// Schema para atualização de empresa (sem certificado obrigatório)
+export const updateEmpresaSchema = z.object({
+  razaoSocial: z.string().min(1, "Razão social é obrigatória").optional(),
+  uf: z.string().length(2, "UF deve ter 2 caracteres").optional(),
+  ambiente: z.enum(["prod", "hom"]).optional(),
+  certificadoSenha: z.string().min(1, "Senha do certificado é obrigatória").optional(),
+  tipoArmazenamento: z.enum(["local", "supabase"]).optional(),
+  manifestacaoAutomatica: z.boolean().optional(),
+  ativo: z.boolean().optional(),
+});
+
+export type UpdateEmpresa = z.infer<typeof updateEmpresaSchema>;
+
 // UFs do Brasil
 export const UFS = [
   "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA",

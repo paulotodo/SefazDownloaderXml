@@ -329,6 +329,17 @@ export default function Empresas() {
                           >
                             <Play className="w-4 h-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            asChild
+                            title="Editar empresa"
+                            data-testid={`button-edit-${empresa.id}`}
+                          >
+                            <Link href={`/empresas/${empresa.id}/editar`}>
+                              <Pencil className="w-4 h-4" />
+                            </Link>
+                          </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button

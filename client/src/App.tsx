@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import Dashboard from "@/pages/dashboard";
 import Empresas from "@/pages/empresas";
 import EmpresaForm from "@/pages/empresa-form";
+import EmpresaEdit from "@/pages/empresa-edit";
 import Xmls from "@/pages/xmls";
 import Logs from "@/pages/logs";
 import Configuracoes from "@/pages/configuracoes";
@@ -99,7 +100,9 @@ function AuthenticatedLayout() {
                 <Route path="/">{() => <ProtectedRoute component={Dashboard} />}</Route>
                 <Route path="/empresas">{() => <ProtectedRoute component={Empresas} />}</Route>
                 <Route path="/empresas/nova">{() => <ProtectedRoute component={EmpresaForm} />}</Route>
-                <Route path="/empresas/:id/editar">{() => <ProtectedRoute component={EmpresaForm} />}</Route>
+                <Route path="/empresas/:id/editar">
+                  {(params) => <ProtectedRoute component={() => <EmpresaEdit params={params} />} />}
+                </Route>
                 <Route path="/xmls">{() => <ProtectedRoute component={Xmls} />}</Route>
                 <Route path="/logs">{() => <ProtectedRoute component={Logs} />}</Route>
                 <Route path="/configuracoes">{() => <ProtectedRoute component={Configuracoes} />}</Route>
