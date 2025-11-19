@@ -679,26 +679,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/configuracoes", authenticateUser, async (req, res) => {
     const userId = req.user!.id;
     try {
+      console.log("[PUT /api/configuracoes] Request body:", JSON.stringify(req.body));
       const { updateConfiguracaoSchema } = await import("@shared/schema");
       const updates = updateConfiguracaoSchema.parse(req.body);
+      console.log("[PUT /api/configuracoes] Parsed updates:", JSON.stringify(updates));
       
       // Verifica se existe configuração
       let config = await storage.getConfiguracao(userId);
+      console.log("[PUT /api/configuracoes] Existing config:", config ? "found" : "not found");
       
       if (!config) {
         // Cria se não existir
+        console.log("[PUT /api/configuracoes] Creating new config");
         config = await storage.createConfiguracao({ userId, ...updates });
       } else {
         // Atualiza se existir
+        console.log("[PUT /api/configuracoes] Updating existing config");
         config = await storage.updateConfiguracao(userId, updates);
       }
       
+      console.log("[PUT /api/configuracoes] Success");
       res.json(config);
     } catch (error) {
+      console.error("[PUT /api/configuracoes] Error:", error);
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      res.status(500).json({ error: String(error) });
+      res.status(500).json({ error: String(error), stack: error instanceof Error ? error.stack : undefined });
     }
   });
 
