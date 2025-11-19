@@ -3,6 +3,32 @@
 ## Overview
 This web application automates the download of XMLs (nfeProc) from SEFAZ, offering hourly synchronization for multiple registered companies. It provides a robust, multi-tenant solution for managing fiscal documents, aiming to streamline compliance and data access for businesses. The project integrates a modern web stack with secure authentication and a reliable system for interacting with government services, promising efficiency and reduced manual effort in fiscal document management.
 
+## Recent Major Features (November 19, 2025)
+### FASE 1.1 - Sistema de Manifestação do Destinatário (NT 2020.001)
+- **Feature**: Implementado sistema completo de manifestação do destinatário conforme NT 2020.001
+- **Schema Changes**:
+  - Nova tabela `manifestacoes` com 18 campos (chaveNFe, tipoEvento, status, dataAutorizacaoNFe, dataManifestacao, prazoLegal, nsuEvento, protocoloEvento, cStat, xMotivo, justificativa, tentativas, ultimoErro, createdAt, updatedAt)
+  - Novos campos em `empresas`: `tipoArmazenamento` ("local" | "supabase") e `manifestacaoAutomatica` (boolean)
+- **Storage**: 8 métodos CRUD implementados para manifestações:
+  - `getManifestacoes`, `getManifestacao`, `getManifestacaoByChave`, `getManifestacoesByEmpresa`
+  - `getManifestacoesPendentes`, `createManifestacao`, `updateManifestacao`, `getManifestacoesRecentes`
+- **Tipos de Evento**: 210200 (Confirmação), 210210 (Ciência), 210220 (Desconhecimento), 210240 (Não Realizada)
+- **Files**: `shared/schema.ts`, `server/storage.ts`, `server/supabase-storage.ts`
+
+### FASE 1.2 - Storage Híbrido (Local + Supabase)
+- **Feature**: Implementado storage híbrido configurável por empresa
+- **Storage Types**:
+  - `"local"`: Filesystem local (./xmls/) - Rápido mas não persistente no Replit
+  - `"supabase"`: Supabase Storage - Persistente, escalável e com backup automático
+- **Implementation**:
+  - Novo serviço `XmlStorageService` com métodos `saveXml`, `getXml`, `existsXml`, `deleteXml`
+  - Bucket "xmls" criado automaticamente no Supabase Storage na inicialização
+  - Todos os 4 métodos de salvamento modificados (saveNFeProc, saveResNFe, saveProcEvento, saveResEvento)
+  - Rota de download `/api/xmls/:id/download` adaptada com backward compatibility
+- **Path Normalization**: Caminhos sempre salvos como relativos (ex: "NFe/CNPJ/2025/11/12345.xml")
+- **Backward Compatibility**: Suporta caminhos absolutos antigos, relativos e Supabase URLs
+- **Files**: `server/xml-storage.ts`, `server/sefaz-service.ts`, `server/routes.ts`, `server/index.ts`
+
 ## Recent Critical Fixes (November 17, 2025)
 ### 6. Correção de Erro de Duplicação de XMLs
 - **Problem**: Erro `duplicate key value violates unique constraint "xmls_empresa_id_chave_nfe_key"` em resEvento e procEventoNFe
@@ -30,12 +56,10 @@ This web application automates the download of XMLs (nfeProc) from SEFAZ, offeri
 - **Behavior**: Apenas XMLs completos aparecem na listagem. Resumos (resEvento, resNFe) são salvos no banco mas não exibidos
 - **Files**: `client/src/pages/xmls.tsx`
 
-### 5. Filesystem Local (Não Persistente)
-- **Status**: XMLs salvos em `./xmls/` (filesystem local)
-- **Limitação**: Arquivos são perdidos quando servidor reinicia no Replit
-- **Schemas Recebidos**: Sistema está recebendo principalmente `resEvento` (resumos de eventos), não `nfeProc` (XMLs completos)
-- **Razão**: CNPJs configurados não são emitentes/destinatários diretos, apenas recebem notificações de eventos
-- **Próximo Passo**: Migrar para Supabase Storage para persistência
+### 5. ~~Filesystem Local (Não Persistente)~~ **[RESOLVIDO em Nov 19]**
+- **Status Antigo**: XMLs salvos em `./xmls/` (filesystem local)
+- **Limitação**: Arquivos eram perdidos quando servidor reiniciava no Replit
+- **Solução**: Implementado storage híbrido (FASE 1.2) - agora configurável por empresa
 
 ## Recent Critical Fixes (November 15, 2025)
 ### 1. XML Parser Configuration (chNFe Precision Loss)
@@ -65,7 +89,7 @@ The application uses a modern full-stack approach:
 -   **Authentication**: Supabase Auth with JWT for secure user management, including refresh tokens and protected routes.
 -   **Scheduling**: `node-cron` for hourly automatic synchronization tasks.
 -   **XML Processing**: `fast-xml-parser` and `pako` (for gzip decompression) handle XML data.
--   **File Storage**: Supabase Storage for secure storage of PFX certificates and XML files.
+-   **File Storage**: Hybrid storage system - Local filesystem (fast, non-persistent) or Supabase Storage (persistent, scalable) configurable per company. Automatic bucket creation and path normalization.
 -   **Certificate Handling**: `node-forge` is used for robust handling and validation of legacy PKCS12 certificates.
 
 ### Feature Specifications
@@ -73,6 +97,8 @@ The application uses a modern full-stack approach:
 -   **Automated Synchronization**: Hourly fetching of XMLs from SEFAZ using `distNSU` (batch mode, up to 50 docs/call).
 -   **Advanced Search by Period**: Manual search for specific NSUs using `consNSU` with 20 queries/hour limit (NT 2014.002).
 -   **Certificate Management**: Secure upload, storage, and validation of `.pfx` digital certificates, including expiration checks.
+-   **Manifestação do Destinatário (NT 2020.001)**: Complete manifestation system with 4 event types (210200 Confirmação, 210210 Ciência, 210220 Desconhecimento, 210240 Não Realizada), automatic tracking of legal deadlines (10 days for awareness, 180 days for conclusive events), and configurable automatic manifestation.
+-   **Hybrid Storage**: Configurable XML storage per company - local filesystem (fast, ephemeral) or Supabase Storage (persistent, backed up). Automatic path normalization and backward compatibility with legacy paths.
 -   **NSU Reconciliation**: Automatic discovery and alignment of the last NSU (Número Sequencial Único) with SEFAZ, adhering strictly to NT 2014.002 to prevent cStat=656 errors.
 -   **Comprehensive Logging**: Detailed logs for all synchronization activities, filterable by level.
 -   **API Endpoints**: Dedicated routes for dashboard metrics, company management (CRUD), XML access, logs, manual synchronization triggers, and advanced period search.
