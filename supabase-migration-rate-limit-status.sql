@@ -8,7 +8,10 @@
 -- 1. TABELA DE RATE LIMITING SEFAZ
 -- ========================================
 
-CREATE TABLE IF NOT EXISTS sefaz_rate_limit (
+-- Remove tabela anterior se existir (para garantir tipos corretos)
+DROP TABLE IF EXISTS sefaz_rate_limit CASCADE;
+
+CREATE TABLE sefaz_rate_limit (
   user_id UUID NOT NULL,
   empresa_id UUID NOT NULL,
   tipo_operacao VARCHAR NOT NULL, -- 'consultaChave', 'distribuicaoDFe', 'recepcaoEvento'
