@@ -360,7 +360,11 @@ export class SupabaseStorage implements IStorage {
   // ========== XMLs ==========
 
   async getXmls(userId?: string): Promise<Xml[]> {
-    let query = supabaseAdmin.from("xmls").select("*").order("created_at", { ascending: false });
+    let query = supabaseAdmin
+      .from("xmls")
+      .select("*")
+      .in("tipo_documento", ["resNFe", "nfeProc"]) // FILTRO: Apenas resNFe e nfeProc
+      .order("created_at", { ascending: false });
     
     if (userId) {
       query = query.eq("user_id", userId);

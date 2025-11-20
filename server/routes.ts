@@ -464,14 +464,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const xmls = await storage.getXmls(userId);
       const empresas = await storage.getEmpresas(userId);
+      const manifestacoes = await storage.getManifestacoes(userId);
+      
       const empresasMap = new Map(empresas.map((e) => [e.id, e]));
+      const manifestacoesMap = new Map(manifestacoes.map((m) => [m.chaveNFe, m]));
 
       const result = xmls.map((xml) => {
         const empresa = empresasMap.get(xml.empresaId);
+        const manifestacao = manifestacoesMap.get(xml.chaveNFe);
+        
         return {
           ...xml,
           empresaCnpj: empresa?.cnpj || "",
           empresaNome: empresa?.razaoSocial || "",
+          manifestacao: manifestacao ? {
+            id: manifestacao.id,
+            tipoEvento: manifestacao.tipoEvento,
+            status: manifestacao.status,
+            dataManifestacao: manifestacao.dataManifestacao,
+          } : null,
         };
       });
 
