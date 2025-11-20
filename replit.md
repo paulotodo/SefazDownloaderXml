@@ -1,5 +1,13 @@
 # SEFAZ XML Sync - Sistema de Download Automático de XMLs
 
+## ⚠️ CRITICAL DATABASE REQUIREMENT
+**THIS SYSTEM USES SUPABASE PRODUCTION DATABASE EXCLUSIVELY - NEVER LOCAL DATABASE**
+- All database operations target Supabase Production
+- All schema changes are applied directly in Supabase Dashboard SQL Editor
+- All queries and storage operations use Supabase client
+- Development/local database tools are NOT used
+- This is a non-negotiable architectural decision
+
 ## Overview
 This web application automates the download of XMLs (nfeProc) from SEFAZ, offering hourly synchronization for multiple registered companies. It provides a robust, multi-tenant solution for managing fiscal documents, aiming to streamline compliance and data access for businesses, reducing manual effort. Key features include automated manifestation of recipient events, hybrid storage options, and comprehensive handling of SEFAZ regulations, promising efficiency in fiscal document management. The project's ambition is to provide a reliable and efficient system for fiscal document management, reducing manual effort and ensuring compliance for businesses.
 
@@ -38,12 +46,16 @@ The application uses a modern full-stack approach:
 -   **Automatic XML Download**: Service for processing pending XML downloads, including retry logic, batch processing, and PostgreSQL-based distributed locks. Now includes pre-download manifestation verification.
 
 ### System Design Choices
+-   **CRITICAL - Database Architecture**: 
+    -   **SUPABASE PRODUCTION ONLY**: All database operations target Supabase Production database
+    -   **NO LOCAL DATABASE**: Development/local PostgreSQL is NOT used
+    -   **Schema Management**: All migrations are SQL scripts executed directly in Supabase Dashboard SQL Editor
+    -   **No Drizzle Direct Connections**: Application uses Supabase client exclusively, never direct Drizzle connections
 -   **Secure Authentication**: JWT-based authentication with server-side validation and automatic token refresh.
 -   **Data Isolation**: Strict multi-tenant data separation enforced by Supabase RLS.
 -   **Robust SEFAZ Integration**: Utilizes PKCS12 certificates for SOAP communication, handles various SEFAZ response codes, supports gzip decompression, and conforms to NT 2014.002 for NSU management.
 -   **Scalable Storage**: XMLs are saved in a structured path (`xmls/CNPJ/Ano/Mês/numeroNF.xml`).
 -   **Distributed Locks**: Implemented using PostgreSQL functions for atomic locking in multi-instance environments, particularly for XML download control.
--   **Database**: Supabase PostgreSQL is the sole database used, with schema applied directly via the Supabase Dashboard. Local databases are explicitly not used.
 -   **Deployment**: Optimized for Docker with `docker-compose`, Nginx, and Certbot.
 
 ## External Dependencies
