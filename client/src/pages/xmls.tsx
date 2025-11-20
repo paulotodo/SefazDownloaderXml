@@ -163,8 +163,9 @@ export default function Xmls() {
     total: xmls?.length || 0,
     completos: xmls?.filter(x => x.tipoDocumento === "nfeProc").length || 0,
     resumos: xmls?.filter(x => x.tipoDocumento === "resNFe").length || 0,
-    pendentesDownload: xmls?.filter(x => x.statusDownload === "pendente").length || 0,
-    errosDownload: xmls?.filter(x => x.statusDownload === "erro" && (x.tentativasDownload || 0) >= 5).length || 0,
+    // CRÍTICO: Apenas resNFe podem estar pendentes de download (nfeProc já está completo)
+    pendentesDownload: xmls?.filter(x => x.tipoDocumento === "resNFe" && x.statusDownload === "pendente").length || 0,
+    errosDownload: xmls?.filter(x => x.tipoDocumento === "resNFe" && x.statusDownload === "erro" && (x.tentativasDownload || 0) >= 5).length || 0,
   };
 
   // Agrupar XMLs por CNPJ > Ano > Mês

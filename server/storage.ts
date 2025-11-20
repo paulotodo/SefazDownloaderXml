@@ -66,6 +66,12 @@ export interface IStorage {
   // Distributed Locks (PostgreSQL advisory locks via tabela dedicada)
   tryAcquireDownloadLock(): Promise<boolean>;
   releaseDownloadLock(): Promise<boolean>;
+
+  // Rate Limiting SEFAZ (evita cStat 656 - máx 20 consultas/hora)
+  checkRateLimit(empresaId: string, tipoOperacao: string, userId: string): Promise<boolean>;
+  
+  // Atualizar status NFe (cancelada, denegada, etc)
+  updateXmlStatus(id: string, statusNfe: string, userId?: string): Promise<Xml | null>;
 }
 
 // Exporta SupabaseStorage como implementação única

@@ -197,6 +197,17 @@ export class XmlDownloadService {
     const novaTentativa = tentativaAtual + 1;
     console.log(`[Download Service] Tentando download: ${xml.chaveNFe} (tentativa ${novaTentativa}/${this.MAX_TENTATIVAS})`);
 
+    // Verifica rate limit ANTES de consultar SEFAZ (máx 20 consultas/hora)
+    const podeConsultar = await storage.checkRateLimit(empresa.id, "consultaChave", empresa.userId);
+    if (!podeConsultar) {
+      console.warn(`[Download Service] Rate limit excedido para empresa ${empresa.id} - pulando XML (retry automático após janela)`);
+      
+      // NÃO grava erro nem incrementa tentativas - rate limit é temporário
+      // XML continuará com statusDownload="pendente" e será retentado automaticamente
+      // quando janela de 1h resetar e rate limiter permitir novamente
+      return;
+    }
+
     // Atualiza tentativa ANTES de consultar
     await storage.updateXml(xml.id, {
       tentativasDownload: novaTentativa,
@@ -294,12 +305,36 @@ export class XmlDownloadService {
       console.warn(`[Download Service] Não foi possível deletar resNFe antigo:`, err);
     }
 
-    // Atualiza registro com XML completo
+    // Determina status da NFe baseado em cStat da SEFAZ
+    let statusNfe = "autorizada"; // Default
+    switch (cStat) {
+      case "100":
+        statusNfe = "autorizada";
+        break;
+      case "101":
+        statusNfe = "cancelada";
+        console.log(`[Download Service] NFe ${xmlOriginal.numeroNF} está CANCELADA (cStat 101)`);
+        break;
+      case "110":
+      case "301":
+      case "302":
+        statusNfe = "denegada";
+        console.log(`[Download Service] NFe ${xmlOriginal.numeroNF} está DENEGADA (cStat ${cStat})`);
+        break;
+      case "217":
+        // NF-e não consta na base da SEFAZ (pode ter sido inutilizada ou erro)
+        statusNfe = "autorizada"; // Mantém default mas pode ser ajustado
+        console.warn(`[Download Service] NFe ${xmlOriginal.numeroNF} não consta (cStat 217)`);
+        break;
+    }
+
+    // Atualiza registro com XML completo E status da NFe
     await storage.updateXml(xmlOriginal.id, {
       tipoDocumento: "nfeProc", // Agora é XML completo
       caminhoArquivo: caminhoCompleto, // Novo caminho
       tamanhoBytes, // Novo tamanho
       statusDownload: "completo",
+      statusNfe, // Status baseado em cStat
       erroDownload: undefined, // Limpa erro anterior
     });
   }

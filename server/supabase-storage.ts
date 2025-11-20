@@ -71,6 +71,7 @@ function parseXml(raw: any): Xml {
     tentativasDownload: raw.tentativas_download || 0,
     ultimaTentativaDownload: raw.ultima_tentativa_download || undefined,
     erroDownload: raw.erro_download || undefined,
+    statusNfe: raw.status_nfe || 'autorizada',
     createdAt: raw.created_at,
   };
 }
@@ -455,6 +456,7 @@ export class SupabaseStorage implements IStorage {
       tamanho_bytes: xml.tamanhoBytes,
       status_download: (xml as any).statusDownload || 'pendente',
       tentativas_download: (xml as any).tentativasDownload || 0,
+      status_nfe: (xml as any).statusNfe || 'autorizada', // CRÍTICO: Sempre define status_nfe
     };
 
     const { data, error } = await supabaseAdmin
@@ -486,6 +488,7 @@ export class SupabaseStorage implements IStorage {
     if (updates.caminhoArquivo !== undefined) updateData.caminho_arquivo = updates.caminhoArquivo;
     if (updates.tamanhoBytes !== undefined) updateData.tamanho_bytes = updates.tamanhoBytes;
     if (updates.tipoDocumento !== undefined) updateData.tipo_documento = updates.tipoDocumento;
+    if (updates.statusNfe !== undefined) updateData.status_nfe = updates.statusNfe;
 
     let query = supabaseAdmin.from("xmls").update(updateData).eq("id", id);
     
@@ -893,6 +896,84 @@ export class SupabaseStorage implements IStorage {
     } catch (error: any) {
       console.error("[SupabaseStorage] Exceção ao liberar lock:", error.message);
       return false;
+    }
+  }
+
+  // ========== RATE LIMITING SEFAZ ==========
+
+  /**
+   * Verifica e incrementa rate limit para consultas SEFAZ
+   * Retorna TRUE se pode consultar (dentro do limite de 20/hora)
+   * Retorna FALSE se excedeu o limite
+   * 
+   * @param empresaId - ID da empresa
+   * @param tipoOperacao - Tipo de operação SEFAZ ('consultaChave', 'distribuicaoDFe', 'recepcaoEvento')
+   * @param userId - ID do usuário
+   */
+  async checkRateLimit(empresaId: string, tipoOperacao: string, userId: string): Promise<boolean> {
+    try {
+      // Chama função PostgreSQL que incrementa e verifica limite
+      const { data, error } = await supabaseAdmin.rpc('increment_and_check_rate_limit', {
+        p_user_id: userId,
+        p_empresa_id: empresaId,
+        p_tipo_operacao: tipoOperacao,
+        p_limite: 20 // Máximo 20 consultas por hora
+      });
+
+      if (error) {
+        // Se RPC não existe, migration não foi aplicada
+        if (error.message.includes("function") && error.message.includes("does not exist")) {
+          console.error("❌ [SupabaseStorage] ERRO CRÍTICO: Migration 'supabase-migration-rate-limit-status.sql' NÃO foi aplicada!");
+          console.error("   → Aplique a migration no Supabase Dashboard antes de usar rate limiting");
+          console.error("   → Rate limiting desabilitado temporariamente (fail-open)");
+        } else {
+          console.error("[SupabaseStorage] Erro ao verificar rate limit:", error.message);
+        }
+        // Em caso de erro, permite consulta (fail-open) - evita bloquear sistema
+        return true;
+      }
+
+      const podeConsultar = !!data;
+      
+      if (!podeConsultar) {
+        console.warn(`[SupabaseStorage] Rate limit excedido para empresa ${empresaId} - operação ${tipoOperacao}`);
+      }
+
+      return podeConsultar;
+    } catch (error: any) {
+      console.error("[SupabaseStorage] Exceção ao verificar rate limit:", error.message);
+      // Em caso de exceção, permite consulta (fail-open)
+      return true;
+    }
+  }
+
+  /**
+   * Atualiza status da NFe (cancelada, denegada, etc)
+   * 
+   * @param id - ID do XML
+   * @param statusNfe - Novo status ('autorizada', 'cancelada', 'denegada', etc)
+   * @param userId - ID do usuário (opcional, para RLS)
+   */
+  async updateXmlStatus(id: string, statusNfe: string, userId?: string): Promise<Xml | null> {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("xmls")
+        .update({ 
+          status_nfe: statusNfe
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[SupabaseStorage] Erro ao atualizar status NFe:", error.message);
+        return null;
+      }
+
+      return parseXml(data);
+    } catch (error: any) {
+      console.error("[SupabaseStorage] Exceção ao atualizar status NFe:", error.message);
+      return null;
     }
   }
 }

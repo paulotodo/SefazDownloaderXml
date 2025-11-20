@@ -95,6 +95,8 @@ export const xmls = pgTable("xmls", {
   tentativasDownload: integer("tentativas_download").notNull().default(0),
   ultimaTentativaDownload: timestamp("ultima_tentativa_download", { withTimezone: true, mode: 'date' }),
   erroDownload: text("erro_download"), // Mensagem do último erro ao tentar download
+  // Status da NFe (baseado em cStat da SEFAZ)
+  statusNfe: text("status_nfe").notNull().default("autorizada"), // "autorizada" (100), "cancelada" (101), "denegada" (110/301/302), "inutilizada", "uso_denegado"
   createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
