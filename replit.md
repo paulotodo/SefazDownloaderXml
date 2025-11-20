@@ -1,5 +1,20 @@
 # SEFAZ XML Sync - Sistema de Download Automático de XMLs
 
+## ⚠️ CONFIGURAÇÃO CRÍTICA DE BANCO DE DADOS
+
+**IMPORTANTE**: Este sistema SEMPRE usa banco de dados Supabase (PostgreSQL) - NUNCA banco local.
+
+- **Ambiente de Desenvolvimento**: Supabase PostgreSQL (via SUPABASE_URL)
+- **Ambiente de Produção**: Supabase PostgreSQL (via SUPABASE_URL)
+- **Banco Local**: NUNCA é usado - completamente ignorado
+- **Schema**: Aplicar `supabase-schema.sql` no SQL Editor do Supabase Dashboard
+- **Migrations**: Não usar execute_sql_tool (conecta banco local) - executar SQL diretamente no Supabase Dashboard
+
+### Aplicar Schema no Supabase
+1. Abra Supabase Dashboard → SQL Editor
+2. Cole TODO o conteúdo de `supabase-schema.sql`
+3. Clique em "Run" e confirme que não há erros
+
 ## Overview
 This web application automates the download of XMLs (nfeProc) from SEFAZ, offering hourly synchronization for multiple registered companies. It provides a robust, multi-tenant solution for managing fiscal documents, aiming to streamline compliance and data access for businesses, reducing manual effort. Key features include automated manifestation of recipient events, hybrid storage options, and comprehensive handling of SEFAZ regulations, promising efficiency in fiscal document management.
 

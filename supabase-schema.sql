@@ -1,178 +1,289 @@
--- ============================================
--- SEFAZ XML Sync - Schema do Banco Supabase
--- ============================================
--- Execute este script no SQL Editor do Supabase Dashboard
--- Settings → SQL Editor → New Query → Cole este código → Run
+-- ============================================================================
+-- SEFAZ XML SYNC - SCHEMA COMPLETO PARA SUPABASE (PRODUÇÃO)
+-- ============================================================================
+-- INSTRUÇÕES:
+-- 1. Abra o Supabase Dashboard → SQL Editor
+-- 2. Cole TODO este arquivo e execute (clique em "Run")
+-- 3. Confirme que não há erros na saída
+-- ============================================================================
 
--- 1. Habilitar extensões necessárias
+-- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_graphql";
 
--- 2. Tabela de perfis de usuário (extends auth.users)
+-- ============================================================================
+-- TABELA: profiles
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  email TEXT NOT NULL,
-  nome_completo TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email text NOT NULL,
+  nome_completo text,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW()
 );
 
--- 3. Tabela de empresas
+-- ============================================================================
+-- TABELA: empresas
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS public.empresas (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  cnpj TEXT NOT NULL,
-  razao_social TEXT NOT NULL,
-  uf TEXT NOT NULL,
-  ambiente TEXT NOT NULL DEFAULT 'prod' CHECK (ambiente IN ('prod', 'hom')),
-  certificado_path TEXT NOT NULL,
-  certificado_senha TEXT NOT NULL,
-  ativo BOOLEAN DEFAULT true NOT NULL,
-  ultimo_nsu TEXT DEFAULT '000000000000000' NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  UNIQUE(user_id, cnpj)
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  cnpj text NOT NULL,
+  razao_social text NOT NULL,
+  uf text NOT NULL,
+  ambiente text NOT NULL DEFAULT 'prod',
+  certificado_path text NOT NULL,
+  certificado_senha text NOT NULL,
+  ativo boolean NOT NULL DEFAULT true,
+  ultimo_nsu text NOT NULL DEFAULT '000000000000000',
+  bloqueado_ate timestamptz,
+  tipo_armazenamento text NOT NULL DEFAULT 'local',
+  manifestacao_automatica boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT empresas_user_cnpj_unique UNIQUE (user_id, cnpj)
 );
 
--- 4. Tabela de sincronizações
+-- Adicionar colunas se não existirem (para updates incrementais)
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name='empresas' AND column_name='tipo_armazenamento') THEN
+    ALTER TABLE public.empresas ADD COLUMN tipo_armazenamento text NOT NULL DEFAULT 'local';
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name='empresas' AND column_name='manifestacao_automatica') THEN
+    ALTER TABLE public.empresas ADD COLUMN manifestacao_automatica boolean NOT NULL DEFAULT true;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- TABELA: sincronizacoes
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS public.sincronizacoes (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  empresa_id UUID REFERENCES public.empresas(id) ON DELETE CASCADE NOT NULL,
-  data_inicio TIMESTAMPTZ NOT NULL,
-  data_fim TIMESTAMPTZ,
-  status TEXT NOT NULL CHECK (status IN ('em_andamento', 'concluida', 'erro')),
-  nsu_inicial TEXT NOT NULL,
-  nsu_final TEXT,
-  xmls_baixados INTEGER DEFAULT 0 NOT NULL,
-  mensagem_erro TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  empresa_id uuid NOT NULL REFERENCES public.empresas(id) ON DELETE CASCADE,
+  data_inicio timestamptz NOT NULL,
+  data_fim timestamptz,
+  status text NOT NULL,
+  nsu_inicial text NOT NULL,
+  nsu_final text,
+  xmls_baixados integer NOT NULL DEFAULT 0,
+  mensagem_erro text,
+  created_at timestamptz NOT NULL DEFAULT NOW()
 );
 
--- 5. Tabela de XMLs
+-- ============================================================================
+-- TABELA: xmls
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS public.xmls (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  empresa_id UUID REFERENCES public.empresas(id) ON DELETE CASCADE NOT NULL,
-  sincronizacao_id UUID REFERENCES public.sincronizacoes(id) ON DELETE SET NULL,
-  chave_nfe TEXT NOT NULL,
-  numero_nf TEXT NOT NULL,
-  data_emissao TIMESTAMPTZ NOT NULL,
-  caminho_arquivo TEXT NOT NULL,
-  tamanho_bytes INTEGER NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  UNIQUE(empresa_id, chave_nfe)
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  empresa_id uuid NOT NULL REFERENCES public.empresas(id) ON DELETE CASCADE,
+  sincronizacao_id uuid REFERENCES public.sincronizacoes(id) ON DELETE SET NULL,
+  chave_nfe text NOT NULL,
+  numero_nf text NOT NULL,
+  modelo text NOT NULL DEFAULT '55',
+  tipo_documento text NOT NULL DEFAULT 'nfeProc',
+  data_emissao timestamptz NOT NULL,
+  caminho_arquivo text NOT NULL,
+  tamanho_bytes integer NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT xmls_user_chave_unique UNIQUE (user_id, chave_nfe)
 );
 
--- 6. Tabela de logs
+-- ============================================================================
+-- TABELA: logs
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS public.logs (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  empresa_id UUID REFERENCES public.empresas(id) ON DELETE CASCADE,
-  sincronizacao_id UUID REFERENCES public.sincronizacoes(id) ON DELETE CASCADE,
-  nivel TEXT NOT NULL CHECK (nivel IN ('info', 'warning', 'error')),
-  mensagem TEXT NOT NULL,
-  detalhes TEXT,
-  timestamp TIMESTAMPTZ DEFAULT NOW() NOT NULL
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  empresa_id uuid REFERENCES public.empresas(id) ON DELETE CASCADE,
+  sincronizacao_id uuid REFERENCES public.sincronizacoes(id) ON DELETE CASCADE,
+  nivel text NOT NULL,
+  mensagem text NOT NULL,
+  detalhes text,
+  timestamp timestamptz NOT NULL DEFAULT NOW()
 );
 
--- ============================================
--- ÍNDICES para performance
--- ============================================
+-- ============================================================================
+-- TABELA: manifestacoes
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.manifestacoes (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  empresa_id uuid NOT NULL REFERENCES public.empresas(id) ON DELETE CASCADE,
+  chave_nfe text NOT NULL,
+  tipo_evento text NOT NULL,
+  status text NOT NULL DEFAULT 'pendente',
+  data_autorizacao_nfe timestamptz NOT NULL,
+  data_manifestacao timestamptz,
+  prazo_legal timestamptz NOT NULL,
+  nsu_evento text,
+  protocolo_evento text,
+  c_stat text,
+  x_motivo text,
+  justificativa text,
+  tentativas integer NOT NULL DEFAULT 0,
+  ultimo_erro text,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW(),
+  CONSTRAINT manifestacoes_user_chave_unique UNIQUE (user_id, chave_nfe)
+);
 
-CREATE INDEX IF NOT EXISTS idx_empresas_user_id ON public.empresas(user_id);
-CREATE INDEX IF NOT EXISTS idx_empresas_ativo ON public.empresas(ativo);
-CREATE INDEX IF NOT EXISTS idx_sincronizacoes_user_id ON public.sincronizacoes(user_id);
-CREATE INDEX IF NOT EXISTS idx_sincronizacoes_empresa_id ON public.sincronizacoes(empresa_id);
-CREATE INDEX IF NOT EXISTS idx_sincronizacoes_status ON public.sincronizacoes(status);
-CREATE INDEX IF NOT EXISTS idx_xmls_user_id ON public.xmls(user_id);
-CREATE INDEX IF NOT EXISTS idx_xmls_empresa_id ON public.xmls(empresa_id);
-CREATE INDEX IF NOT EXISTS idx_xmls_data_emissao ON public.xmls(data_emissao);
-CREATE INDEX IF NOT EXISTS idx_logs_user_id ON public.logs(user_id);
-CREATE INDEX IF NOT EXISTS idx_logs_nivel ON public.logs(nivel);
-CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON public.logs(timestamp DESC);
+-- ============================================================================
+-- TABELA: configuracoes
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.configuracoes (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  intervalo_sincronizacao text NOT NULL DEFAULT '1h',
+  sincronizacao_automatica boolean NOT NULL DEFAULT true,
+  sincronizar_ao_iniciar boolean NOT NULL DEFAULT true,
+  retry_automatico boolean NOT NULL DEFAULT true,
+  max_retries integer NOT NULL DEFAULT 3,
+  timeout_requisicao integer NOT NULL DEFAULT 60,
+  validar_ssl boolean NOT NULL DEFAULT true,
+  logs_detalhados boolean NOT NULL DEFAULT false,
+  notificar_novos_xmls boolean NOT NULL DEFAULT true,
+  notificar_erros boolean NOT NULL DEFAULT true,
+  relatorio_diario boolean NOT NULL DEFAULT false,
+  email_notificacoes text,
+  created_at timestamptz NOT NULL DEFAULT NOW(),
+  updated_at timestamptz NOT NULL DEFAULT NOW()
+);
 
--- ============================================
--- ROW LEVEL SECURITY (RLS) Policies
--- ============================================
+-- ============================================================================
+-- ROW LEVEL SECURITY (RLS)
+-- ============================================================================
 
--- Habilitar RLS em todas as tabelas
+-- Enable RLS em todas as tabelas
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.empresas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sincronizacoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.xmls ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.manifestacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.configuracoes ENABLE ROW LEVEL SECURITY;
 
--- Policies para PROFILES
-CREATE POLICY "Usuários podem ver seu próprio perfil"
-  ON public.profiles FOR SELECT
-  USING (auth.uid() = id);
+-- Políticas para profiles
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile" ON public.profiles
+  FOR SELECT USING (auth.uid() = id);
 
-CREATE POLICY "Usuários podem atualizar seu próprio perfil"
-  ON public.profiles FOR UPDATE
-  USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile" ON public.profiles
+  FOR UPDATE USING (auth.uid() = id);
 
-CREATE POLICY "Usuários podem inserir seu próprio perfil"
-  ON public.profiles FOR INSERT
-  WITH CHECK (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile" ON public.profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
 
--- Policies para EMPRESAS
-CREATE POLICY "Usuários podem ver apenas suas empresas"
-  ON public.empresas FOR SELECT
-  USING (auth.uid() = user_id);
+-- Políticas para empresas
+DROP POLICY IF EXISTS "Users can view own empresas" ON public.empresas;
+CREATE POLICY "Users can view own empresas" ON public.empresas
+  FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Usuários podem criar suas próprias empresas"
-  ON public.empresas FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own empresas" ON public.empresas;
+CREATE POLICY "Users can insert own empresas" ON public.empresas
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Usuários podem atualizar suas próprias empresas"
-  ON public.empresas FOR UPDATE
-  USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own empresas" ON public.empresas;
+CREATE POLICY "Users can update own empresas" ON public.empresas
+  FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "Usuários podem deletar suas próprias empresas"
-  ON public.empresas FOR DELETE
-  USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can delete own empresas" ON public.empresas;
+CREATE POLICY "Users can delete own empresas" ON public.empresas
+  FOR DELETE USING (auth.uid() = user_id);
 
--- Policies para SINCRONIZAÇÕES
-CREATE POLICY "Usuários podem ver apenas suas sincronizações"
-  ON public.sincronizacoes FOR SELECT
-  USING (auth.uid() = user_id);
+-- Políticas para sincronizacoes
+DROP POLICY IF EXISTS "Users can view own sincronizacoes" ON public.sincronizacoes;
+CREATE POLICY "Users can view own sincronizacoes" ON public.sincronizacoes
+  FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Service role pode inserir sincronizações"
-  ON public.sincronizacoes FOR INSERT
-  WITH CHECK (true);
+DROP POLICY IF EXISTS "Users can insert own sincronizacoes" ON public.sincronizacoes;
+CREATE POLICY "Users can insert own sincronizacoes" ON public.sincronizacoes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Service role pode atualizar sincronizações"
-  ON public.sincronizacoes FOR UPDATE
-  USING (true);
+DROP POLICY IF EXISTS "Users can update own sincronizacoes" ON public.sincronizacoes;
+CREATE POLICY "Users can update own sincronizacoes" ON public.sincronizacoes
+  FOR UPDATE USING (auth.uid() = user_id);
 
--- Policies para XMLs
-CREATE POLICY "Usuários podem ver apenas seus XMLs"
-  ON public.xmls FOR SELECT
-  USING (auth.uid() = user_id);
+-- Políticas para xmls
+DROP POLICY IF EXISTS "Users can view own xmls" ON public.xmls;
+CREATE POLICY "Users can view own xmls" ON public.xmls
+  FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Service role pode inserir XMLs"
-  ON public.xmls FOR INSERT
-  WITH CHECK (true);
+DROP POLICY IF EXISTS "Users can insert own xmls" ON public.xmls;
+CREATE POLICY "Users can insert own xmls" ON public.xmls
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Usuários podem deletar seus XMLs"
-  ON public.xmls FOR DELETE
-  USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own xmls" ON public.xmls;
+CREATE POLICY "Users can update own xmls" ON public.xmls
+  FOR UPDATE USING (auth.uid() = user_id);
 
--- Policies para LOGS
-CREATE POLICY "Usuários podem ver seus logs ou logs do sistema"
-  ON public.logs FOR SELECT
-  USING (auth.uid() = user_id OR user_id IS NULL);
+DROP POLICY IF EXISTS "Users can delete own xmls" ON public.xmls;
+CREATE POLICY "Users can delete own xmls" ON public.xmls
+  FOR DELETE USING (auth.uid() = user_id);
 
-CREATE POLICY "Service role pode criar logs"
-  ON public.logs FOR INSERT
-  WITH CHECK (true);
+-- Políticas para logs
+DROP POLICY IF EXISTS "Users can view own logs" ON public.logs;
+CREATE POLICY "Users can view own logs" ON public.logs
+  FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
 
--- ============================================
--- TRIGGERS para updated_at
--- ============================================
+DROP POLICY IF EXISTS "Users can insert own logs" ON public.logs;
+CREATE POLICY "Users can insert own logs" ON public.logs
+  FOR INSERT WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
 
-CREATE OR REPLACE FUNCTION public.handle_updated_at()
+-- Políticas para manifestacoes
+DROP POLICY IF EXISTS "Users can view own manifestacoes" ON public.manifestacoes;
+CREATE POLICY "Users can view own manifestacoes" ON public.manifestacoes
+  FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own manifestacoes" ON public.manifestacoes;
+CREATE POLICY "Users can insert own manifestacoes" ON public.manifestacoes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own manifestacoes" ON public.manifestacoes;
+CREATE POLICY "Users can update own manifestacoes" ON public.manifestacoes
+  FOR UPDATE USING (auth.uid() = user_id);
+
+-- Políticas para configuracoes
+DROP POLICY IF EXISTS "Users can view own configuracoes" ON public.configuracoes;
+CREATE POLICY "Users can view own configuracoes" ON public.configuracoes
+  FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own configuracoes" ON public.configuracoes;
+CREATE POLICY "Users can insert own configuracoes" ON public.configuracoes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own configuracoes" ON public.configuracoes;
+CREATE POLICY "Users can update own configuracoes" ON public.configuracoes
+  FOR UPDATE USING (auth.uid() = user_id);
+
+-- ============================================================================
+-- ÍNDICES PARA PERFORMANCE
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_empresas_user_id ON public.empresas(user_id);
+CREATE INDEX IF NOT EXISTS idx_sincronizacoes_user_id ON public.sincronizacoes(user_id);
+CREATE INDEX IF NOT EXISTS idx_sincronizacoes_empresa_id ON public.sincronizacoes(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_xmls_user_id ON public.xmls(user_id);
+CREATE INDEX IF NOT EXISTS idx_xmls_empresa_id ON public.xmls(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_xmls_chave_nfe ON public.xmls(chave_nfe);
+CREATE INDEX IF NOT EXISTS idx_logs_user_id ON public.logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_logs_empresa_id ON public.logs(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_manifestacoes_user_id ON public.manifestacoes(user_id);
+CREATE INDEX IF NOT EXISTS idx_manifestacoes_empresa_id ON public.manifestacoes(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_manifestacoes_chave_nfe ON public.manifestacoes(chave_nfe);
+CREATE INDEX IF NOT EXISTS idx_configuracoes_user_id ON public.configuracoes(user_id);
+
+-- ============================================================================
+-- TRIGGERS PARA updated_at
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.updated_at = NOW();
@@ -180,46 +291,45 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER set_updated_at_profiles
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
+CREATE TRIGGER update_profiles_updated_at
   BEFORE UPDATE ON public.profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-CREATE TRIGGER set_updated_at_empresas
+DROP TRIGGER IF EXISTS update_empresas_updated_at ON public.empresas;
+CREATE TRIGGER update_empresas_updated_at
   BEFORE UPDATE ON public.empresas
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- ============================================
--- TRIGGER para criar perfil automaticamente
--- ============================================
+DROP TRIGGER IF EXISTS update_manifestacoes_updated_at ON public.manifestacoes;
+CREATE TRIGGER update_manifestacoes_updated_at
+  BEFORE UPDATE ON public.manifestacoes
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.profiles (id, email, nome_completo)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'nome_completo', NEW.raw_user_meta_data->>'nomeCompleto', '')
-  );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+DROP TRIGGER IF EXISTS update_configuracoes_updated_at ON public.configuracoes;
+CREATE TRIGGER update_configuracoes_updated_at
+  BEFORE UPDATE ON public.configuracoes
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- Remover trigger existente se houver
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+-- ============================================================================
+-- VALIDAÇÃO FINAL
+-- ============================================================================
 
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.handle_new_user();
+-- Lista todas as tabelas criadas
+SELECT 'Tabelas criadas:' as resultado, table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'public' 
+  AND table_type = 'BASE TABLE'
+ORDER BY table_name;
 
--- ============================================
--- CONCLUÍDO
--- ============================================
--- ✅ Execute este script completo no Supabase SQL Editor
--- ✅ Todas as tabelas, índices, RLS policies e triggers foram criados
--- ✅ Pronto para começar a usar!
+-- Verifica colunas críticas em empresas
+SELECT 'Colunas empresas:' as resultado, column_name, data_type, column_default 
+FROM information_schema.columns 
+WHERE table_schema='public' 
+  AND table_name='empresas' 
+  AND column_name IN ('tipo_armazenamento', 'manifestacao_automatica')
+ORDER BY column_name;
 
-SELECT 'Schema criado com sucesso! ✅' as status;
+-- ============================================================================
+-- FIM DO SCRIPT - Se chegou aqui sem erros, está tudo correto!
+-- ============================================================================
