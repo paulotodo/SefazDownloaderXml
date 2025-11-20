@@ -1129,27 +1129,77 @@ export class SefazService {
         empresaId: empresa.id,
         nivel: "info",
         mensagem: `Manifestação ${this.getTipoEventoDescricao(tpEvento)}: ${cStat} - ${xMotivo}`,
-        detalhes: JSON.stringify({ chaveNFe, tpEvento, cStat, nProt }),
+        detalhes: JSON.stringify({ chaveNFe, tpEvento, cStat, nProt, dhRegEvento }),
       });
 
+      // CRÍTICO: Calcular datas obrigatórias para evitar erro de NOT NULL
+      // dataAutorizacaoNFe: tenta extrair do dhRegEvento, senão usa data atual
+      let dataAutorizacaoNFe = new Date();
+      if (dhRegEvento) {
+        const tentativaData = new Date(dhRegEvento);
+        // CRÍTICO: new Date() não lança exceção com input inválido, retorna Invalid Date
+        // Precisa validar explicitamente com isNaN(date.getTime())
+        if (!Number.isNaN(tentativaData.getTime())) {
+          dataAutorizacaoNFe = tentativaData;
+          console.log(`[Manifestação] Data autorização NFe extraída: ${dhRegEvento}`);
+        } else {
+          console.warn(`[Manifestação] dhRegEvento inválido "${dhRegEvento}", usando data atual`);
+        }
+      } else {
+        console.warn(`[Manifestação] dhRegEvento não fornecido pela SEFAZ, usando data atual`);
+      }
+
+      // Valida dataAutorizacaoNFe antes de calcular prazoLegal
+      if (Number.isNaN(dataAutorizacaoNFe.getTime())) {
+        console.error(`[Manifestação] dataAutorizacaoNFe inválida, forçando data atual`);
+        dataAutorizacaoNFe = new Date();
+      }
+
+      // prazoLegal: NT 2020.001 §4 - 180 dias corridos a partir da autorização
+      const prazoLegal = new Date(dataAutorizacaoNFe);
+      prazoLegal.setDate(prazoLegal.getDate() + 180);
+
+      console.log(`[Manifestação] Dados calculados - dataAutorizacao: ${dataAutorizacaoNFe.toISOString()}, prazoLegal: ${prazoLegal.toISOString()}`);
+
       // Cria/atualiza registro de manifestação
-      const manifestacao = await storage.createManifestacao({
-        userId: empresa.userId,
-        empresaId: empresa.id,
-        chaveNFe,
-        tipoEvento: tpEvento,
-        status: cStat === "135" ? "autorizado" : "rejeitado", // cStat 135 = Evento registrado
-        dataAutorizacaoNFe: null, // Será preenchido futuramente
-        dataManifestacao: new Date(),
-        prazoLegal: null, // Será calculado futuramente
-        nsuEvento: null,
-        protocoloEvento: nProt || null,
-        cStat,
-        xMotivo,
-        justificativa: justificativa || null,
-        tentativas: 1,
-        ultimoErro: cStat === "135" ? null : xMotivo,
-      });
+      let manifestacao;
+      try {
+        manifestacao = await storage.createManifestacao({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          chaveNFe,
+          tipoEvento: tpEvento,
+          status: cStat === "135" ? "autorizado" : "rejeitado", // cStat 135 = Evento registrado
+          dataAutorizacaoNFe,
+          dataManifestacao: new Date(),
+          prazoLegal,
+          nsuEvento: null,
+          protocoloEvento: nProt || null,
+          cStat,
+          xMotivo,
+          justificativa: justificativa || null,
+          tentativas: 1,
+          ultimoErro: cStat === "135" ? null : xMotivo,
+        });
+
+        console.log(`[Manifestação] ✅ Registro salvo no banco: ${manifestacao.id}`);
+      } catch (dbError: any) {
+        console.error(`[Manifestação] ❌ ERRO ao salvar no banco:`, dbError);
+        await storage.createLog({
+          userId: empresa.userId,
+          empresaId: empresa.id,
+          nivel: "error",
+          mensagem: `Erro ao salvar manifestação no banco`,
+          detalhes: JSON.stringify({ 
+            chaveNFe, 
+            tpEvento, 
+            cStat, 
+            erro: dbError.message,
+            stack: dbError.stack 
+          }),
+        });
+        throw new Error(`Erro ao salvar manifestação no banco: ${dbError.message}`);
+      }
 
       console.log(`[Manifestação] ${cStat === "135" ? "✅ Sucesso" : "❌ Rejeitado"}: ${xMotivo}`);
       return manifestacao;
