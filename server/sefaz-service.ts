@@ -1011,11 +1011,11 @@ export class SefazService {
    * Uso: Baixar XML completo (nfeProc) quando só temos resumo (resNFe)
    * Essencial para manifestação do destinatário
    * 
-   * @param empresa - Dados da empresa
    * @param chaveNFe - Chave de acesso de 44 dígitos
-   * @returns XML completo (nfeProc) ou null se não encontrado
+   * @param empresa - Dados da empresa
+   * @returns Objeto com xmlContent e cStat, ou null se não encontrado
    */
-  async consultarChave(empresa: Empresa, chaveNFe: string): Promise<string | null> {
+  async consultarChave(chaveNFe: string, empresa: Empresa): Promise<{ xmlContent: string; cStat: string } | null> {
     try {
       console.log(`[consChNFe] Consultando chave ${chaveNFe} para empresa ${empresa.cnpj}`);
 
@@ -1046,7 +1046,7 @@ export class SefazService {
         // Verifica se é nfeProc (XML completo)
         if (parsed.nfeProc) {
           console.log(`[consChNFe] XML completo encontrado para chave ${chaveNFe}`);
-          return xmlContent;
+          return { xmlContent, cStat: response.cStat };
         } else {
           console.warn(`[consChNFe] Chave ${chaveNFe} retornou documento que não é nfeProc:`, Object.keys(parsed));
           return null;

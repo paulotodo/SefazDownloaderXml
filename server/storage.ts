@@ -62,6 +62,10 @@ export interface IStorage {
   getConfiguracao(userId: string): Promise<Configuracao | null>;
   createConfiguracao(config: InsertConfiguracao & { userId: string }): Promise<Configuracao>;
   updateConfiguracao(userId: string, updates: UpdateConfiguracao): Promise<Configuracao>;
+
+  // Distributed Locks (PostgreSQL advisory locks via tabela dedicada)
+  tryAcquireDownloadLock(): Promise<boolean>;
+  releaseDownloadLock(): Promise<boolean>;
 }
 
 // Exporta SupabaseStorage como implementação única

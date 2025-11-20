@@ -26,6 +26,9 @@ interface Xml {
   caminhoArquivo: string;
   tamanhoBytes: number;
   createdAt: string;
+  statusDownload?: string;
+  tentativasDownload?: number;
+  erroDownload?: string;
 }
 
 interface Manifestacao {
@@ -84,6 +87,50 @@ function getManifestacaoBadge(manifestacao?: Manifestacao) {
   );
 }
 
+function getDownloadBadge(xml: Xml) {
+  // Se é resNFe, mostra status de download
+  if (xml.tipoDocumento === "resNFe") {
+    if (xml.statusDownload === "pendente") {
+      return (
+        <Badge variant="outline" className="gap-1 text-xs">
+          <Clock className="w-3 h-3" />
+          Download Pendente
+        </Badge>
+      );
+    }
+    
+    if (xml.statusDownload === "processando") {
+      return (
+        <Badge variant="secondary" className="gap-1 text-xs">
+          <Download className="w-3 h-3" />
+          Baixando...
+        </Badge>
+      );
+    }
+    
+    if (xml.statusDownload === "erro") {
+      return (
+        <Badge variant="destructive" className="gap-1 text-xs" title={xml.erroDownload}>
+          <XCircle className="w-3 h-3" />
+          Erro ({xml.tentativasDownload || 0}/5)
+        </Badge>
+      );
+    }
+  }
+  
+  // Se é nfeProc, mostra que está completo
+  if (xml.tipoDocumento === "nfeProc") {
+    return (
+      <Badge variant="default" className="gap-1 text-xs">
+        <CheckCircle2 className="w-3 h-3" />
+        Completo
+      </Badge>
+    );
+  }
+  
+  return null;
+}
+
 export default function Xmls() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
@@ -103,14 +150,22 @@ export default function Xmls() {
   const manifestacoesMap = new Map<string, Manifestacao>();
   manifestacoes?.forEach((m) => manifestacoesMap.set(m.chaveNFe, m));
 
-  const filteredXmls = xmls
-    ?.filter((xml) => xml.tipoDocumento === "nfeProc") // Apenas XMLs completos
-    ?.filter((xml) =>
-      xml.numeroNF.includes(searchTerm) ||
-      xml.chaveNFe.includes(searchTerm) ||
-      xml.empresaNome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      xml.empresaCnpj.includes(searchTerm)
-    );
+  // Filtra XMLs para mostrar todos (nfeProc e resNFe)
+  const filteredXmls = xmls?.filter((xml) =>
+    xml.numeroNF.includes(searchTerm) ||
+    xml.chaveNFe.includes(searchTerm) ||
+    xml.empresaNome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    xml.empresaCnpj.includes(searchTerm)
+  );
+
+  // Conta XMLs por tipo e status
+  const stats = {
+    total: xmls?.length || 0,
+    completos: xmls?.filter(x => x.tipoDocumento === "nfeProc").length || 0,
+    resumos: xmls?.filter(x => x.tipoDocumento === "resNFe").length || 0,
+    pendentesDownload: xmls?.filter(x => x.statusDownload === "pendente").length || 0,
+    errosDownload: xmls?.filter(x => x.statusDownload === "erro" && (x.tentativasDownload || 0) >= 5).length || 0,
+  };
 
   // Agrupar XMLs por CNPJ > Ano > Mês
   const groupedXmls: XmlGroup[] = [];
@@ -210,6 +265,59 @@ export default function Xmls() {
           <p className="text-sm text-muted-foreground">Navegue pelos XMLs organizados por empresa, ano e mês</p>
         </div>
       </div>
+
+      {/* Estatísticas de Download */}
+      {!isLoading && (stats.resumos > 0 || stats.pendentesDownload > 0 || stats.errosDownload > 0) && (
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600" />
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground">XMLs Completos</p>
+                  <p className="text-2xl font-semibold">{stats.completos}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground">Resumos (resNFe)</p>
+                  <p className="text-2xl font-semibold">{stats.resumos}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-yellow-600" />
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground">Pendentes Download</p>
+                  <p className="text-2xl font-semibold">{stats.pendentesDownload}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2">
+                <XCircle className="w-4 h-4 text-red-600" />
+                <div className="flex-1">
+                  <p className="text-xs text-muted-foreground">Erros Download</p>
+                  <p className="text-2xl font-semibold">{stats.errosDownload}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-6">
@@ -339,6 +447,7 @@ export default function Xmls() {
                                                 {xml.chaveNFe}
                                               </p>
                                             </div>
+                                            {getDownloadBadge(xml)}
                                             {getManifestacaoBadge(manifestacoesMap.get(xml.chaveNFe))}
                                             <div className="text-xs text-muted-foreground flex-shrink-0">
                                               {formatFileSize(xml.tamanhoBytes)}

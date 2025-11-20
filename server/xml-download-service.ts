@@ -20,28 +20,67 @@ import { xmlStorageService } from "./xml-storage";
 export class XmlDownloadService {
   private readonly MAX_TENTATIVAS = 5;
   private readonly BATCH_SIZE = 10; // Processa 10 XMLs por vez
-  private readonly LOCK_TIMEOUT = 10 * 60 * 1000; // 10 minutos
+  private readonly LOCK_TIMEOUT = 3 * 60 * 1000; // 3 minutos (menos que intervalo do cron de 5min)
+  private lockAcquired: boolean = false; // Flag se lock foi adquirido
 
   /**
-   * Verifica/adquire lock para processamento
-   * Retorna true se conseguiu lock, false se já há processamento ativo
+   * Adquire lock distribuído usando PostgreSQL + tabela dedicada
+   * ATÔMICO: INSERT ON CONFLICT garante exclusão mútua real
    */
   private async acquireLock(): Promise<boolean> {
     try {
-      const now = new Date();
-      const lockExpiry = new Date(now.getTime() + this.LOCK_TIMEOUT);
+      // Tenta adquirir lock distribuído
+      const acquired = await storage.tryAcquireDownloadLock();
+      
+      if (!acquired) {
+        console.log("[Download Service] Lock já ocupado por outro processo");
+        return false;
+      }
 
-      // Tenta criar um log especial como "lease" (lock distribuído)
+      console.log("[Download Service] Lock adquirido com sucesso");
+      this.lockAcquired = true;
+      
+      // Log para auditoria (não para controle de lock)
       await storage.createLog({
         nivel: "info",
         mensagem: "Download Service - Lock Acquired",
-        detalhes: JSON.stringify({ lockExpiry: lockExpiry.toISOString(), pid: process.pid }),
+        detalhes: JSON.stringify({ 
+          timestamp: new Date().toISOString(),
+          pid: process.pid 
+        }),
       });
 
       return true;
     } catch (error) {
-      // Se falhar, assume que já tem lock ativo
+      console.error("[Download Service] Erro ao adquirir lock:", error);
       return false;
+    }
+  }
+
+  /**
+   * Libera lock distribuído
+   */
+  private async releaseLock(): Promise<void> {
+    if (!this.lockAcquired) return;
+    
+    try {
+      await storage.releaseDownloadLock();
+      
+      console.log("[Download Service] Lock liberado com sucesso");
+      
+      // Log para auditoria
+      await storage.createLog({
+        nivel: "info",
+        mensagem: "Download Service - Lock Released",
+        detalhes: JSON.stringify({ 
+          timestamp: new Date().toISOString(),
+          pid: process.pid 
+        }),
+      });
+      
+      this.lockAcquired = false;
+    } catch (error) {
+      console.error("[Download Service] Erro ao liberar lock:", error);
     }
   }
 
@@ -51,6 +90,13 @@ export class XmlDownloadService {
    */
   async processarDownloadsPendentes(): Promise<void> {
     console.log("[Download Service] Iniciando processamento de downloads pendentes...");
+
+    // CRÍTICO: Tenta adquirir lock para evitar concorrência
+    const lockAcquired = await this.acquireLock();
+    if (!lockAcquired) {
+      console.log("[Download Service] Lock ativo - outro processo está executando. Pulando esta execução.");
+      return;
+    }
 
     try {
       // Busca XMLs pendentes (sem filtro de usuário - processa todos)
@@ -66,14 +112,38 @@ export class XmlDownloadService {
         return;
       }
 
-      console.log(`[Download Service] Encontrados ${todosXmls.length} XMLs para processar`);
+      // CRÍTICO: Filtra novamente para garantir que apenas resNFe seja processado
+      // Isso previne race conditions onde XML pode ter sido convertido entre query e processamento
+      const xmlsValidos = todosXmls.filter(xml => {
+        if (xml.tipoDocumento !== "resNFe") {
+          console.warn(`[Download Service] Pulando XML ${xml.id} - já é ${xml.tipoDocumento}`);
+          return false;
+        }
+        if (xml.statusDownload === "completo") {
+          console.warn(`[Download Service] Pulando XML ${xml.id} - status já é completo`);
+          return false;
+        }
+        const tentativas = xml.tentativasDownload ?? 0;
+        if (tentativas >= this.MAX_TENTATIVAS) {
+          console.warn(`[Download Service] Pulando XML ${xml.id} - já atingiu ${tentativas} tentativas`);
+          return false;
+        }
+        return true;
+      });
+
+      if (xmlsValidos.length === 0) {
+        console.log("[Download Service] Nenhum XML válido para processar após filtros");
+        return;
+      }
+
+      console.log(`[Download Service] Encontrados ${xmlsValidos.length} XMLs válidos para processar (de ${todosXmls.length} retornados)`);
       console.log(`  - Pendentes: ${xmlsPendentes.length}`);
       console.log(`  - Com erro (retry): ${xmlsComErro.length}`);
 
       // Agrupa XMLs por empresa para otimizar certificados
-      const xmlsPorEmpresa = this.agruparPorEmpresa(todosXmls);
+      const xmlsPorEmpresa = this.agruparPorEmpresa(xmlsValidos);
 
-      for (const [empresaId, xmls] of xmlsPorEmpresa.entries()) {
+      for (const [empresaId, xmls] of Array.from(xmlsPorEmpresa.entries())) {
         await this.processarXmlsDaEmpresa(empresaId, xmls);
       }
 
@@ -85,6 +155,9 @@ export class XmlDownloadService {
         mensagem: "Erro no processamento de downloads automáticos",
         detalhes: JSON.stringify({ erro: error.message }),
       });
+    } finally {
+      // CRÍTICO: Sempre libera lock, mesmo em caso de erro
+      await this.releaseLock();
     }
   }
 
@@ -119,7 +192,9 @@ export class XmlDownloadService {
    * Tenta fazer download do XML completo via consulta por chave
    */
   private async tentarDownloadXml(xml: Xml, empresa: Empresa): Promise<void> {
-    const novaTentativa = xml.tentativasDownload + 1;
+    // CRÍTICO: Garante que tentativasDownload é número, não NaN
+    const tentativaAtual = xml.tentativasDownload ?? 0;
+    const novaTentativa = tentativaAtual + 1;
     console.log(`[Download Service] Tentando download: ${xml.chaveNFe} (tentativa ${novaTentativa}/${this.MAX_TENTATIVAS})`);
 
     // Atualiza tentativa ANTES de consultar

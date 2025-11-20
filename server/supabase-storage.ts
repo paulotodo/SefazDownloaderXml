@@ -820,6 +820,81 @@ export class SupabaseStorage implements IStorage {
     if (error) throw new Error(`Erro ao atualizar configuração: ${error.message}`);
     return parseConfiguracao(data);
   }
+
+  // ========== DISTRIBUTED LOCKS ==========
+  
+  // Owner UUID único e estável para esta instância do processo
+  private lockOwnerUuid: string | null = null;
+
+  /**
+   * Obtém ou gera owner UUID estável para locks distribuídos
+   */
+  private getLockOwnerUuid(): string {
+    if (!this.lockOwnerUuid) {
+      // Usa UUID da variável de ambiente ou gera novo (estável durante vida do processo)
+      this.lockOwnerUuid = process.env.LOCK_OWNER_UUID || crypto.randomUUID();
+      console.log(`[SupabaseStorage] Lock owner UUID: ${this.lockOwnerUuid}`);
+    }
+    return this.lockOwnerUuid;
+  }
+
+  /**
+   * Tenta adquirir lock de download distribuído usando função PostgreSQL
+   * Retorna true se conseguiu adquirir, false se já ocupado por outro owner
+   */
+  async tryAcquireDownloadLock(): Promise<boolean> {
+    try {
+      const lockName = "xml-download-service";
+      const ownerUuid = this.getLockOwnerUuid();
+      
+      // Chama função PostgreSQL via RPC
+      const { data, error } = await supabaseAdmin.rpc('acquire_download_lock', {
+        p_name: lockName,
+        p_owner: ownerUuid,
+        p_ttl_seconds: 180 // 3 minutos
+      });
+
+      if (error) {
+        console.error("[SupabaseStorage] Erro ao adquirir lock:", error.message);
+        return false;
+      }
+
+      const acquired = !!data;
+      console.log(`[SupabaseStorage] Lock "${lockName}" acquire: ${acquired ? 'SUCCESS' : 'FAIL (já ocupado)'}`);
+      return acquired;
+    } catch (error: any) {
+      console.error("[SupabaseStorage] Exceção ao adquirir lock:", error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Libera lock de download distribuído
+   * Retorna true se liberou, false se não era o owner
+   */
+  async releaseDownloadLock(): Promise<boolean> {
+    try {
+      const lockName = "xml-download-service";
+      const ownerUuid = this.getLockOwnerUuid();
+      
+      const { data, error } = await supabaseAdmin.rpc('release_download_lock', {
+        p_name: lockName,
+        p_owner: ownerUuid
+      });
+
+      if (error) {
+        console.error("[SupabaseStorage] Erro ao liberar lock:", error.message);
+        return false;
+      }
+
+      const released = !!data;
+      console.log(`[SupabaseStorage] Lock "${lockName}" release: ${released ? 'SUCCESS' : 'FAIL (não era o owner)'}`);
+      return released;
+    } catch (error: any) {
+      console.error("[SupabaseStorage] Exceção ao liberar lock:", error.message);
+      return false;
+    }
+  }
 }
 
 export const supabaseStorage = new SupabaseStorage();

@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { sefazService } from "./sefaz-service";
+import { xmlDownloadService } from "./xml-download-service";
 import { authenticateUser } from "./auth-middleware";
 import authRoutes from "./auth-routes";
 import multer from "multer";
@@ -709,8 +710,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ========== DOWNLOADS AUTOMÁTICOS ========== (protegidos)
+  
+  // GET /api/xmls/downloads/pendentes - Lista XMLs pendentes de download
+  app.get("/api/xmls/downloads/pendentes", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const xmls = await storage.getXmlsPendentesDownload(userId, 100);
+      res.json(xmls);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // GET /api/xmls/downloads/erros - Lista XMLs com erro definitivo
+  app.get("/api/xmls/downloads/erros", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const xmls = await storage.getXmlsComErroDefinitivo(userId, 100);
+      res.json(xmls);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // POST /api/xmls/downloads/processar - Processa downloads pendentes manualmente
+  app.post("/api/xmls/downloads/processar", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const { empresaId } = req.body;
+      
+      if (!empresaId) {
+        return res.status(400).json({ error: "empresaId é obrigatório" });
+      }
+
+      // Processa downloads da empresa específica
+      const resultado = await xmlDownloadService.processarDownloadsEmpresa(empresaId, userId);
+      
+      res.json({
+        message: "Processamento concluído",
+        ...resultado
+      });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // POST /api/xmls/downloads/retry/:id - Força retry de um XML específico
+  app.post("/api/xmls/downloads/retry/:id", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    const { id } = req.params;
+    
+    try {
+      // Reseta status para pendente com tentativas zeradas
+      const xml = await storage.updateXml(id, {
+        statusDownload: "pendente",
+        tentativasDownload: 0,
+        erroDownload: undefined,
+      }, userId);
+
+      if (!xml) {
+        return res.status(404).json({ error: "XML não encontrado" });
+      }
+
+      res.json({ message: "XML marcado para retry", xml });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== AGENDAMENTO AUTOMÁTICO ==========
-  // Executa a cada 1 hora
+  
+  // Sincronização SEFAZ - Executa a cada 1 hora
   cron.schedule("0 * * * *", async () => {
     console.log("Executando sincronização agendada...");
     try {
@@ -720,7 +791,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  console.log("✓ Agendamento configurado: sincronização a cada 1 hora");
+  // Download automático de XMLs - Executa a cada 5 minutos
+  cron.schedule("*/5 * * * *", async () => {
+    console.log("[Cron] Executando processamento de downloads pendentes...");
+    try {
+      await xmlDownloadService.processarDownloadsPendentes();
+    } catch (error) {
+      console.error("[Cron] Erro no processamento de downloads:", error);
+    }
+  });
+
+  console.log("✓ Agendamento configurado:");
+  console.log("  - Sincronização SEFAZ: a cada 1 hora");
+  console.log("  - Download de XMLs: a cada 5 minutos");
 
   const httpServer = createServer(app);
   return httpServer;
