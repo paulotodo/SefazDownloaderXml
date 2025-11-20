@@ -400,6 +400,7 @@ export class SupabaseStorage implements IStorage {
     let query = supabaseAdmin
       .from("xmls")
       .select("id", { count: "exact", head: true })
+      .in("tipo_documento", ["resNFe", "nfeProc"]) // FILTRO: Apenas resNFe e nfeProc
       .gte("created_at", hoje.toISOString());
     
     if (userId) {
@@ -416,6 +417,7 @@ export class SupabaseStorage implements IStorage {
     let query = supabaseAdmin
       .from("xmls")
       .select("*")
+      .in("tipo_documento", ["resNFe", "nfeProc"]) // FILTRO: Apenas resNFe e nfeProc
       .order("created_at", { ascending: false })
       .limit(limit);
     
