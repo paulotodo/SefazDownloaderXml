@@ -222,6 +222,8 @@ export class SupabaseStorage implements IStorage {
     if (updates.bloqueadoAte !== undefined) updateData.bloqueado_ate = updates.bloqueadoAte;
     if (updates.tipoArmazenamento !== undefined) updateData.tipo_armazenamento = updates.tipoArmazenamento;
     if (updates.manifestacaoAutomatica !== undefined) updateData.manifestacao_automatica = updates.manifestacaoAutomatica;
+    
+    updateData.updated_at = new Date().toISOString();
 
     let query = supabaseAdmin.from("empresas").update(updateData).eq("id", id);
     
@@ -229,14 +231,17 @@ export class SupabaseStorage implements IStorage {
       query = query.eq("user_id", userId);
     }
 
-    const { data, error } = await query.select().single();
+    // Não usa .select() para evitar erro de cache do PostgREST
+    // Busca os dados atualizados em seguida
+    const { error } = await query;
 
     if (error) {
       if (error.code === "PGRST116") return null;
       throw new Error(`Erro ao atualizar empresa: ${error.message}`);
     }
 
-    return parseEmpresa(data);
+    // Busca empresa atualizada
+    return this.getEmpresa(id, userId);
   }
 
   async deleteEmpresa(id: string, userId?: string): Promise<boolean> {
