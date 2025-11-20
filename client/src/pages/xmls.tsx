@@ -29,6 +29,12 @@ interface Xml {
   statusDownload?: string;
   tentativasDownload?: number;
   erroDownload?: string;
+  manifestacao?: {
+    id: string;
+    tipoEvento: string;
+    status: string;
+    dataManifestacao: string | null;
+  } | null;
 }
 
 interface Manifestacao {
@@ -52,17 +58,24 @@ interface XmlGroup {
   }[];
 }
 
-function getManifestacaoBadge(manifestacao?: Manifestacao) {
+function getManifestacaoBadge(xml: Xml) {
+  // Apenas resNFe pode ter manifestação
+  if (xml.tipoDocumento !== "resNFe") {
+    return null;
+  }
+
+  const manifestacao = xml.manifestacao;
+
   if (!manifestacao) {
     return (
       <Badge variant="outline" className="gap-1 text-xs">
         <Clock className="w-3 h-3" />
-        Pendente
+        Não Manifestado
       </Badge>
     );
   }
 
-  if (manifestacao.status === "sucesso") {
+  if (manifestacao.status === "confirmado") {
     return (
       <Badge variant="default" className="gap-1 text-xs">
         <CheckCircle2 className="w-3 h-3" />
@@ -75,7 +88,16 @@ function getManifestacaoBadge(manifestacao?: Manifestacao) {
     return (
       <Badge variant="destructive" className="gap-1 text-xs">
         <XCircle className="w-3 h-3" />
-        Erro
+        Erro Manifestação
+      </Badge>
+    );
+  }
+
+  if (manifestacao.status === "pendente") {
+    return (
+      <Badge variant="secondary" className="gap-1 text-xs">
+        <Clock className="w-3 h-3" />
+        Manifestação Pendente
       </Badge>
     );
   }
@@ -87,43 +109,66 @@ function getManifestacaoBadge(manifestacao?: Manifestacao) {
   );
 }
 
-function getDownloadBadge(xml: Xml) {
-  // Se é resNFe, mostra status de download
+function getTipoDocumentoBadge(xml: Xml) {
   if (xml.tipoDocumento === "resNFe") {
-    if (xml.statusDownload === "pendente") {
-      return (
-        <Badge variant="outline" className="gap-1 text-xs">
-          <Clock className="w-3 h-3" />
-          Download Pendente
-        </Badge>
-      );
-    }
-    
-    if (xml.statusDownload === "processando") {
-      return (
-        <Badge variant="secondary" className="gap-1 text-xs">
-          <Download className="w-3 h-3" />
-          Baixando...
-        </Badge>
-      );
-    }
-    
-    if (xml.statusDownload === "erro") {
-      return (
-        <Badge variant="destructive" className="gap-1 text-xs" title={xml.erroDownload}>
-          <XCircle className="w-3 h-3" />
-          Erro ({xml.tentativasDownload || 0}/5)
-        </Badge>
-      );
-    }
+    return (
+      <Badge variant="secondary" className="gap-1 text-xs">
+        <FileText className="w-3 h-3" />
+        Resumo
+      </Badge>
+    );
   }
   
-  // Se é nfeProc, mostra que está completo
   if (xml.tipoDocumento === "nfeProc") {
     return (
       <Badge variant="default" className="gap-1 text-xs">
         <CheckCircle2 className="w-3 h-3" />
-        Completo
+        XML Completo
+      </Badge>
+    );
+  }
+  
+  return null;
+}
+
+function getDownloadBadge(xml: Xml) {
+  // Apenas resNFe pode ter download pendente (nfeProc já está completo)
+  if (xml.tipoDocumento !== "resNFe") {
+    return null;
+  }
+
+  if (xml.statusDownload === "pendente") {
+    return (
+      <Badge variant="outline" className="gap-1 text-xs">
+        <Clock className="w-3 h-3" />
+        Aguardando Download
+      </Badge>
+    );
+  }
+  
+  if (xml.statusDownload === "processando") {
+    return (
+      <Badge variant="secondary" className="gap-1 text-xs">
+        <Download className="w-3 h-3" />
+        Baixando...
+      </Badge>
+    );
+  }
+  
+  if (xml.statusDownload === "erro") {
+    return (
+      <Badge variant="destructive" className="gap-1 text-xs" title={xml.erroDownload}>
+        <XCircle className="w-3 h-3" />
+        Erro Download ({xml.tentativasDownload || 0}/5)
+      </Badge>
+    );
+  }
+
+  if (xml.statusDownload === "completo") {
+    return (
+      <Badge variant="default" className="gap-1 text-xs">
+        <CheckCircle2 className="w-3 h-3" />
+        Download OK
       </Badge>
     );
   }
@@ -141,14 +186,6 @@ export default function Xmls() {
   const { data: xmls, isLoading } = useQuery<Xml[]>({
     queryKey: ["/api/xmls"],
   });
-
-  const { data: manifestacoes } = useQuery<Manifestacao[]>({
-    queryKey: ["/api/manifestacoes"],
-  });
-
-  // Map de chaveNFe -> Manifestacao para lookup rápido
-  const manifestacoesMap = new Map<string, Manifestacao>();
-  manifestacoes?.forEach((m) => manifestacoesMap.set(m.chaveNFe, m));
 
   // Filtra XMLs para mostrar todos (nfeProc e resNFe)
   const filteredXmls = xmls?.filter((xml) =>
@@ -448,8 +485,11 @@ export default function Xmls() {
                                                 {xml.chaveNFe}
                                               </p>
                                             </div>
-                                            {getDownloadBadge(xml)}
-                                            {getManifestacaoBadge(manifestacoesMap.get(xml.chaveNFe))}
+                                            <div className="flex items-center gap-1 flex-wrap">
+                                              {getTipoDocumentoBadge(xml)}
+                                              {getManifestacaoBadge(xml)}
+                                              {getDownloadBadge(xml)}
+                                            </div>
                                             <div className="text-xs text-muted-foreground flex-shrink-0">
                                               {formatFileSize(xml.tamanhoBytes)}
                                             </div>
