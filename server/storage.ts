@@ -36,8 +36,11 @@ export interface IStorage {
   getXml(id: string, userId?: string): Promise<Xml | null>;
   getXmlByChave(chaveNFe: string, userId?: string): Promise<Xml | null>;
   createXml(xml: InsertXml & { userId: string }): Promise<Xml>;
+  updateXml(id: string, updates: Partial<Xml>, userId?: string): Promise<Xml | null>;
   getXmlsRecentes(limit?: number, userId?: string): Promise<Xml[]>;
   getXmlsHoje(userId?: string): Promise<number>;
+  getXmlsPendentesDownload(userId?: string, limit?: number): Promise<Xml[]>;
+  getXmlsComErroDownload(userId?: string, limit?: number): Promise<Xml[]>;
 
   // Logs
   getLogs(userId?: string): Promise<Log[]>;

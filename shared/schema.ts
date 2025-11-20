@@ -90,6 +90,11 @@ export const xmls = pgTable("xmls", {
   dataEmissao: timestamp("data_emissao", { withTimezone: true, mode: 'date' }).notNull(),
   caminhoArquivo: text("caminho_arquivo").notNull(),
   tamanhoBytes: integer("tamanho_bytes").notNull(),
+  // Controle de download automático de XML completo
+  statusDownload: text("status_download").notNull().default("pendente"), // "pendente", "completo", "erro"
+  tentativasDownload: integer("tentativas_download").notNull().default(0),
+  ultimaTentativaDownload: timestamp("ultima_tentativa_download", { withTimezone: true, mode: 'date' }),
+  erroDownload: text("erro_download"), // Mensagem do último erro ao tentar download
   createdAt: timestamp("created_at", { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 

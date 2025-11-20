@@ -67,6 +67,10 @@ function parseXml(raw: any): Xml {
     dataEmissao: raw.data_emissao,
     caminhoArquivo: raw.caminho_arquivo,
     tamanhoBytes: raw.tamanho_bytes,
+    statusDownload: raw.status_download || 'pendente',
+    tentativasDownload: raw.tentativas_download || 0,
+    ultimaTentativaDownload: raw.ultima_tentativa_download || undefined,
+    erroDownload: raw.erro_download || undefined,
     createdAt: raw.created_at,
   };
 }
@@ -438,20 +442,24 @@ export class SupabaseStorage implements IStorage {
   }
 
   async createXml(xml: InsertXml & { userId: string }): Promise<Xml> {
+    const insertData: any = {
+      user_id: xml.userId,
+      empresa_id: xml.empresaId,
+      sincronizacao_id: xml.sincronizacaoId || null,
+      chave_nfe: xml.chaveNFe,
+      numero_nf: xml.numeroNF,
+      modelo: xml.modelo,
+      tipo_documento: xml.tipoDocumento,
+      data_emissao: xml.dataEmissao,
+      caminho_arquivo: xml.caminhoArquivo,
+      tamanho_bytes: xml.tamanhoBytes,
+      status_download: (xml as any).statusDownload || 'pendente',
+      tentativas_download: (xml as any).tentativasDownload || 0,
+    };
+
     const { data, error } = await supabaseAdmin
       .from("xmls")
-      .insert({
-        user_id: xml.userId,
-        empresa_id: xml.empresaId,
-        sincronizacao_id: xml.sincronizacaoId || null,
-        chave_nfe: xml.chaveNFe,
-        numero_nf: xml.numeroNF,
-        modelo: xml.modelo,
-        tipo_documento: xml.tipoDocumento,
-        data_emissao: xml.dataEmissao,
-        caminho_arquivo: xml.caminhoArquivo,
-        tamanho_bytes: xml.tamanhoBytes,
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -466,6 +474,71 @@ export class SupabaseStorage implements IStorage {
     }
     
     return parseXml(data);
+  }
+
+  async updateXml(id: string, updates: Partial<Xml>, userId?: string): Promise<Xml | null> {
+    const updateData: any = {};
+    
+    if (updates.statusDownload !== undefined) updateData.status_download = updates.statusDownload;
+    if (updates.tentativasDownload !== undefined) updateData.tentativas_download = updates.tentativasDownload;
+    if (updates.ultimaTentativaDownload !== undefined) updateData.ultima_tentativa_download = updates.ultimaTentativaDownload;
+    if (updates.erroDownload !== undefined) updateData.erro_download = updates.erroDownload;
+    if (updates.caminhoArquivo !== undefined) updateData.caminho_arquivo = updates.caminhoArquivo;
+    if (updates.tamanhoBytes !== undefined) updateData.tamanho_bytes = updates.tamanhoBytes;
+    if (updates.tipoDocumento !== undefined) updateData.tipo_documento = updates.tipoDocumento;
+
+    let query = supabaseAdmin.from("xmls").update(updateData).eq("id", id);
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      if (error.code === "PGRST116") return null;
+      throw new Error(`Erro ao atualizar XML: ${error.message}`);
+    }
+
+    return this.getXml(id, userId);
+  }
+
+  async getXmlsPendentesDownload(userId?: string, limit: number = 50): Promise<Xml[]> {
+    let query = supabaseAdmin
+      .from("xmls")
+      .select("*")
+      .eq("status_download", "pendente")
+      .order("created_at", { ascending: true })
+      .limit(limit);
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(`Erro ao buscar XMLs pendentes: ${error.message}`);
+    return (data || []).map(parseXml);
+  }
+
+  async getXmlsComErroDownload(userId?: string, limit: number = 50, maxTentativas: number = 5): Promise<Xml[]> {
+    let query = supabaseAdmin
+      .from("xmls")
+      .select("*")
+      .eq("status_download", "pendente") // Busca pendentes, não erro (erro já atingiu o limite)
+      .gt("tentativas_download", 0) // Que já tiveram pelo menos uma tentativa
+      .lt("tentativas_download", maxTentativas) // Que ainda não atingiram o limite
+      .order("ultima_tentativa_download", { ascending: true })
+      .limit(limit);
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(`Erro ao buscar XMLs com erro: ${error.message}`);
+    return (data || []).map(parseXml);
   }
 
   // ========== LOGS ==========

@@ -658,6 +658,8 @@ export class SefazService {
       dataEmissao,
       caminhoArquivo: caminhoCompleto,
       tamanhoBytes,
+      statusDownload: "completo", // XML completo já obtido
+      tentativasDownload: 0,
     });
 
     await storage.createLog({
@@ -734,6 +736,7 @@ export class SefazService {
     );
     const tamanhoBytes = Buffer.byteLength(xmlContent, "utf-8");
 
+    // Salva resNFe e marca como pendente para download do XML completo
     await storage.createXml({
       userId: empresa.userId,
       empresaId: empresa.id,
@@ -745,6 +748,8 @@ export class SefazService {
       dataEmissao,
       caminhoArquivo: caminhoCompleto,
       tamanhoBytes,
+      statusDownload: "pendente", // Marca para download automático do XML completo
+      tentativasDownload: 0,
     });
 
     await storage.createLog({
