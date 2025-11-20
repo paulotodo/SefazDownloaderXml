@@ -24,8 +24,9 @@ CREATE TABLE IF NOT EXISTS public.rate_limits (
 CREATE INDEX IF NOT EXISTS idx_rate_limits_lookup 
 ON public.rate_limits(user_id, empresa_id, tipo_operacao, janela_inicio);
 
+-- Índice simples para cleanup (sem predicado NOW() que não é IMMUTABLE)
 CREATE INDEX IF NOT EXISTS idx_rate_limits_cleanup 
-ON public.rate_limits(janela_inicio) WHERE janela_inicio < NOW() - INTERVAL '2 hours';
+ON public.rate_limits(janela_inicio);
 
 -- 3. Habilitar RLS (Row Level Security)
 ALTER TABLE public.rate_limits ENABLE ROW LEVEL SECURITY;
