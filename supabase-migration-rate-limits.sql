@@ -48,6 +48,9 @@ CREATE POLICY "Users can update their own rate limits" ON public.rate_limits
   USING (auth.uid() = user_id);
 
 -- 5. Criar função de incremento e verificação de rate limit
+-- Remover função existente primeiro (caso já exista de execução anterior)
+DROP FUNCTION IF EXISTS public.increment_and_check_rate_limit(UUID, UUID, TEXT, INTEGER);
+
 CREATE OR REPLACE FUNCTION public.increment_and_check_rate_limit(
   p_user_id UUID,
   p_empresa_id UUID,
@@ -94,6 +97,9 @@ END;
 $$;
 
 -- 6. Criar função de limpeza de registros antigos (executar periodicamente)
+-- Remover função existente primeiro (caso já exista de execução anterior)
+DROP FUNCTION IF EXISTS public.cleanup_old_rate_limits();
+
 CREATE OR REPLACE FUNCTION public.cleanup_old_rate_limits()
 RETURNS INTEGER
 LANGUAGE plpgsql
