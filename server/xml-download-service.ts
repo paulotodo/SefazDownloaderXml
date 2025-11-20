@@ -94,6 +94,7 @@ export class XmlDownloadService {
 
       // CRÍTICO: Filtra novamente para garantir que apenas resNFe seja processado
       // Isso previne race conditions onde XML pode ter sido convertido entre query e processamento
+      // IMPORTANTE: NÃO filtramos por tentativasDownload aqui pois a manifestação é independente
       const xmlsValidos = todosXmls.filter(xml => {
         if (xml.tipoDocumento !== "resNFe") {
           console.warn(`[Download Service] Pulando XML ${xml.id} - já é ${xml.tipoDocumento}`);
@@ -103,11 +104,7 @@ export class XmlDownloadService {
           console.warn(`[Download Service] Pulando XML ${xml.id} - status já é completo`);
           return false;
         }
-        const tentativas = xml.tentativasDownload ?? 0;
-        if (tentativas >= this.MAX_TENTATIVAS) {
-          console.warn(`[Download Service] Pulando XML ${xml.id} - já atingiu ${tentativas} tentativas`);
-          return false;
-        }
+        // Removido filtro por tentativasDownload - permitir retry de manifestação
         return true;
       });
 
@@ -172,15 +169,16 @@ export class XmlDownloadService {
    * Tenta fazer download do XML completo via consulta por chave
    * NOVO FLUXO (2024-11):
    * 1. Verifica se já foi manifestado
-   * 2. Se não foi manifestado, manifesta primeiro (respeitando rate limit)
-   * 3. Só depois tenta o download do XML completo
-   * 4. Sempre respeita limite de 20 consultas/hora por empresa
+   * 2. Se não foi manifestado, manifesta primeiro (respeitando rate limit e max tentativas)
+   * 3. Se manifestação falhou mas ainda tem tentativas, retenta manifestação
+   * 4. Só depois tenta o download do XML completo
+   * 5. Sempre respeita limite de 20 consultas/hora por empresa
    */
   private async tentarDownloadXml(xml: Xml, empresa: Empresa): Promise<void> {
     // CRÍTICO: Garante que tentativasDownload é número, não NaN
     const tentativaAtual = xml.tentativasDownload ?? 0;
     const novaTentativa = tentativaAtual + 1;
-    console.log(`[Download Service] Processando: ${xml.chaveNFe} (tentativa ${novaTentativa}/${this.MAX_TENTATIVAS})`);
+    console.log(`[Download Service] Processando: ${xml.chaveNFe} (tentativa download ${novaTentativa}/${this.MAX_TENTATIVAS})`);
 
     // ====================
     // ETAPA 1: MANIFESTAÇÃO
@@ -188,8 +186,17 @@ export class XmlDownloadService {
     // Verifica se já foi manifestado antes de baixar
     const manifestacaoExistente = await storage.getManifestacaoByChave(xml.chaveNFe, empresa.userId);
     
-    if (!manifestacaoExistente) {
-      console.log(`[Download Service] XML não manifestado - tentando manifestar primeiro: ${xml.chaveNFe}`);
+    if (!manifestacaoExistente || manifestacaoExistente.status === "erro") {
+      // Verifica tentativas de manifestação (separado de tentativas de download)
+      const tentativasManifestacao = manifestacaoExistente?.tentativas ?? 0;
+      
+      if (tentativasManifestacao >= this.MAX_TENTATIVAS) {
+        console.warn(`[Download Service] Manifestação atingiu ${tentativasManifestacao} tentativas - pulando por enquanto`);
+        // NÃO tenta download sem manifestação válida
+        return;
+      }
+      
+      console.log(`[Download Service] XML não manifestado ou com erro - tentando manifestar: ${xml.chaveNFe} (tentativa manifestação ${tentativasManifestacao + 1}/${this.MAX_TENTATIVAS})`);
       
       // Verifica rate limit ANTES de manifestar (máx 20 consultas/hora)
       const podeManifest = await storage.checkRateLimit(empresa.id, "manifestacao", empresa.userId);
@@ -217,32 +224,48 @@ export class XmlDownloadService {
           mensagem: `Manifestação automática enviada: NF-e ${xml.numeroNF}`,
           detalhes: JSON.stringify({ 
             chaveNFe: xml.chaveNFe,
-            tipoEvento: "210210 - Ciência da Operação"
+            tipoEvento: "210210 - Ciência da Operação",
+            tentativa: tentativasManifestacao + 1
           }),
         });
       } catch (manifestError: any) {
         console.error(`[Download Service] ✗ Erro ao manifestar ${xml.chaveNFe}:`, manifestError.message);
         
-        // Não falha o download por erro de manifestação
-        // Continua para tentar o download mesmo assim
+        // Log do erro de manifestação
         await storage.createLog({
           userId: xml.userId,
           empresaId: xml.empresaId,
           nivel: "warning",
-          mensagem: `Erro na manifestação automática (continuando download): NF-e ${xml.numeroNF}`,
+          mensagem: `Erro na manifestação automática (retry na próxima execução): NF-e ${xml.numeroNF}`,
           detalhes: JSON.stringify({ 
             chaveNFe: xml.chaveNFe,
-            erro: manifestError.message
+            erro: manifestError.message,
+            tentativa: tentativasManifestacao + 1
           }),
         });
+        
+        // RETORNA sem tentar download - manifestação é pré-requisito
+        return;
       }
+    } else if (manifestacaoExistente.status === "confirmado" || manifestacaoExistente.status === "enviado") {
+      console.log(`[Download Service] XML já manifestado (${manifestacaoExistente.status}) - prosseguindo com download: ${xml.chaveNFe}`);
     } else {
-      console.log(`[Download Service] XML já manifestado - prosseguindo com download: ${xml.chaveNFe}`);
+      console.log(`[Download Service] Manifestação com status ${manifestacaoExistente.status} - prosseguindo com download: ${xml.chaveNFe}`);
     }
 
     // ====================
     // ETAPA 2: DOWNLOAD XML COMPLETO
     // ====================
+    // Verifica se já atingiu limite de tentativas de DOWNLOAD
+    if (tentativaAtual >= this.MAX_TENTATIVAS) {
+      console.warn(`[Download Service] Download já atingiu ${tentativaAtual} tentativas - marcando como erro permanente`);
+      await storage.updateXml(xml.id, {
+        statusDownload: "erro",
+        erroDownload: `Máximo de ${this.MAX_TENTATIVAS} tentativas de download atingido`,
+      });
+      return;
+    }
+    
     // Verifica rate limit ANTES de consultar SEFAZ (máx 20 consultas/hora)
     const podeConsultar = await storage.checkRateLimit(empresa.id, "consultaChave", empresa.userId);
     if (!podeConsultar) {
