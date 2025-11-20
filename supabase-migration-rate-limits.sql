@@ -48,8 +48,16 @@ CREATE POLICY "Users can update their own rate limits" ON public.rate_limits
   USING (auth.uid() = user_id);
 
 -- 5. Criar função de incremento e verificação de rate limit
--- Remover função existente primeiro (caso já exista de execução anterior)
-DROP FUNCTION IF EXISTS public.increment_and_check_rate_limit(UUID, UUID, TEXT, INTEGER);
+-- Remover TODAS as versões da função (CASCADE remove dependências)
+DO $$ 
+BEGIN
+  -- Remove todas as sobrecargas da função
+  EXECUTE (
+    SELECT string_agg('DROP FUNCTION IF EXISTS ' || oid::regprocedure || ' CASCADE;', ' ')
+    FROM pg_proc
+    WHERE proname = 'increment_and_check_rate_limit' AND pronamespace = 'public'::regnamespace
+  );
+END $$;
 
 CREATE OR REPLACE FUNCTION public.increment_and_check_rate_limit(
   p_user_id UUID,
@@ -97,8 +105,16 @@ END;
 $$;
 
 -- 6. Criar função de limpeza de registros antigos (executar periodicamente)
--- Remover função existente primeiro (caso já exista de execução anterior)
-DROP FUNCTION IF EXISTS public.cleanup_old_rate_limits();
+-- Remover TODAS as versões da função (CASCADE remove dependências)
+DO $$ 
+BEGIN
+  -- Remove todas as sobrecargas da função
+  EXECUTE (
+    SELECT string_agg('DROP FUNCTION IF EXISTS ' || oid::regprocedure || ' CASCADE;', ' ')
+    FROM pg_proc
+    WHERE proname = 'cleanup_old_rate_limits' AND pronamespace = 'public'::regnamespace
+  );
+END $$;
 
 CREATE OR REPLACE FUNCTION public.cleanup_old_rate_limits()
 RETURNS INTEGER
@@ -129,8 +145,8 @@ GRANT EXECUTE ON FUNCTION public.cleanup_old_rate_limits() TO service_role;
 COMMENT ON TABLE public.rate_limits IS 'Controla rate limiting de consultas SEFAZ (máx 20/hora por empresa)';
 COMMENT ON COLUMN public.rate_limits.janela_inicio IS 'Início da janela de 1 hora (truncado para hora cheia)';
 COMMENT ON COLUMN public.rate_limits.contador IS 'Número de consultas feitas nesta janela';
-COMMENT ON FUNCTION public.increment_and_check_rate_limit IS 'Incrementa contador e retorna TRUE se dentro do limite - APENAS service_role';
-COMMENT ON FUNCTION public.cleanup_old_rate_limits IS 'Remove registros de rate limit com mais de 2 horas - APENAS service_role';
+COMMENT ON FUNCTION public.increment_and_check_rate_limit(UUID, UUID, TEXT, INTEGER) IS 'Incrementa contador e retorna TRUE se dentro do limite - APENAS service_role';
+COMMENT ON FUNCTION public.cleanup_old_rate_limits() IS 'Remove registros de rate limit com mais de 2 horas - APENAS service_role';
 
 -- ============================================================
 -- FIM DA MIGRAÇÃO
