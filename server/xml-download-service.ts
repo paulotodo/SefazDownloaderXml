@@ -18,7 +18,7 @@ import path from "path";
 import { xmlStorageService } from "./xml-storage";
 
 export class XmlDownloadService {
-  private readonly MAX_TENTATIVAS = 5;
+  private readonly MAX_TENTATIVAS = 2; // Máximo de 2 tentativas por XML
   private readonly BATCH_SIZE = 10; // Processa 10 XMLs por vez
   private readonly LOCK_TIMEOUT = 3 * 60 * 1000; // 3 minutos (menos que intervalo do cron de 5min)
   private lockAcquired: boolean = false; // Flag se lock foi adquirido

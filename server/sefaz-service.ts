@@ -174,24 +174,6 @@ export class SefazService {
   }
 
   /**
-   * Retorna descrição do evento conforme tipo de manifestação (NT 2020.001)
-   */
-  private getTipoEventoDescricao(tpEvento: string): string {
-    switch (tpEvento) {
-      case TIPOS_MANIFESTACAO.CONFIRMACAO:
-        return "Confirmacao da Operacao";
-      case TIPOS_MANIFESTACAO.CIENCIA:
-        return "Ciencia da Operacao";
-      case TIPOS_MANIFESTACAO.DESCONHECIMENTO:
-        return "Desconhecimento da Operacao";
-      case TIPOS_MANIFESTACAO.NAO_REALIZADA:
-        return "Operacao nao Realizada";
-      default:
-        throw new Error(`Tipo de evento inválido: ${tpEvento}`);
-    }
-  }
-
-  /**
    * Monta SOAP envelope para Manifestação do Destinatário (NFeRecepcaoEvento v4.00)
    * Conforme NT 2020.001
    * 
@@ -346,10 +328,12 @@ export class SefazService {
 
         // Cria agente HTTPS com certificado em formato PEM
         // PEM é suportado nativamente pelo OpenSSL 3.x, evitando problemas com algoritmos legados
+        // IMPORTANTE: NÃO passamos 'ca' para preservar a trust store padrão do Node.js
+        // que inclui certificados raiz ICP-Brasil/SEFAZ necessários para validar o servidor
         const agent = new https.Agent({
           key: certData.key,
           cert: certData.cert,
-          ca: certData.ca.length > 0 ? certData.ca : undefined,
+          // NÃO passar 'ca' - deixa Node.js usar trust store padrão (ICP-Brasil/AC-SVRS)
           rejectUnauthorized: true, // Validar certificados SSL
           secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
           minVersion: 'TLSv1.2' as any, // Mínimo TLS 1.2
@@ -415,10 +399,11 @@ export class SefazService {
           throw error;
         }
 
+        // IMPORTANTE: NÃO passamos 'ca' para preservar a trust store padrão
         const agent = new https.Agent({
           key: certData.key,
           cert: certData.cert,
-          ca: certData.ca.length > 0 ? certData.ca : undefined,
+          // NÃO passar 'ca' - deixa Node.js usar trust store padrão (ICP-Brasil/AC-SVRS)
           rejectUnauthorized: true,
           secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
           minVersion: 'TLSv1.2' as any,
