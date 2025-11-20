@@ -53,7 +53,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  v_deleted BOOLEAN;
+  v_deleted INTEGER;
 BEGIN
   -- Deleta lock apenas se o owner bater
   DELETE FROM public.distributed_locks
