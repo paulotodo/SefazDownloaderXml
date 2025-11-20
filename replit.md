@@ -26,6 +26,7 @@ The application uses a modern full-stack approach:
 -   **Multi-tenant Support**: Data isolation per user via RLS.
 -   **Automated XML Download**: Hourly fetching of XMLs from SEFAZ, supporting `distNSU` and `consNSU` for full XML retrieval from summaries (resNFe to nfeProc).
 -   **Recipient Manifestation (NT 2020.001)**: Complete system for recipient manifestation with 4 event types, automatic tracking of legal deadlines, and configurable automatic manifestation with recipient validation.
+-   **Ordered Processing Flow (Nov 2024)**: Download service now follows strict order: (1) Check if XML is manifested, (2) If not manifested, manifest first (Ciência 210210), (3) Only then attempt XML download, (4) All operations respect 20 queries/hour rate limit per company.
 -   **Hybrid Storage**: Configurable XML storage per company (local or Supabase Storage).
 -   **NSU Reconciliation**: Automatic discovery and alignment of the last NSU with SEFAZ, adhering to NT 2014.002 to prevent cStat=656 errors.
 -   **Comprehensive Logging**: Detailed logs for all synchronization activities.
@@ -34,7 +35,7 @@ The application uses a modern full-stack approach:
 -   **Duplicate XML Handling**: Gracefully handles attempts to insert duplicate XMLs by returning the existing record.
 -   **User Configuration Management**: Persisted user-specific settings for synchronization intervals, automatic processes, retries, timeouts, and notifications.
 -   **Company Management**: Full CRUD operations for companies, including certificate upload and configuration of automatic manifestation and storage type.
--   **Automatic XML Download**: Service for processing pending XML downloads, including retry logic, batch processing, and PostgreSQL-based distributed locks.
+-   **Automatic XML Download**: Service for processing pending XML downloads, including retry logic, batch processing, and PostgreSQL-based distributed locks. Now includes pre-download manifestation verification.
 
 ### System Design Choices
 -   **Secure Authentication**: JWT-based authentication with server-side validation and automatic token refresh.
