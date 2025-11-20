@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Building2, Plus, Pencil, Trash2, Search, Play, RefreshCw, Filter } from "lucide-react";
+import { Building2, Plus, Pencil, Trash2, Search, Play, RefreshCw, Filter, Unlock } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -93,6 +93,24 @@ export default function Empresas() {
     onError: (error: Error) => {
       toast({
         title: "Erro ao sincronizar",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const desbloquearMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/debug/desbloquear/${id}`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/empresas"] });
+      toast({
+        title: "Empresa desbloqueada",
+        description: "O bloqueio foi removido. Você pode sincronizar novamente.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro ao desbloquear",
         description: error.message,
         variant: "destructive",
       });
@@ -318,6 +336,16 @@ export default function Empresas() {
                             data-testid={`button-busca-avancada-${empresa.id}`}
                           >
                             <Filter className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => desbloquearMutation.mutate(empresa.id)}
+                            disabled={desbloquearMutation.isPending}
+                            title="Desbloquear empresa (remove bloqueio SEFAZ)"
+                            data-testid={`button-desbloquear-${empresa.id}`}
+                          >
+                            <Unlock className="w-4 h-4" />
                           </Button>
                           <Button
                             variant="ghost"

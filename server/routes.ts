@@ -43,6 +43,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // ========== DEBUG BLOQUEIO ========== (temporário - remover em produção)
+  app.get("/api/debug/bloqueio", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const empresas = await storage.getEmpresas(userId);
+      const { estaBloqueado, calcularMinutosRestantes, formatarDataBrasilCompleta } = await import("./utils/timezone");
+      
+      const debug = empresas.map(emp => ({
+        id: emp.id,
+        razaoSocial: emp.razaoSocial,
+        bloqueadoAte: emp.bloqueadoAte,
+        bloqueadoAteISO: emp.bloqueadoAte ? emp.bloqueadoAte.toISOString() : null,
+        horaAtual: new Date().toISOString(),
+        bloqueado: estaBloqueado(emp.bloqueadoAte),
+        minutosRestantes: emp.bloqueadoAte ? calcularMinutosRestantes(emp.bloqueadoAte) : null,
+        horarioBR: emp.bloqueadoAte ? formatarDataBrasilCompleta(emp.bloqueadoAte) : null,
+      }));
+      
+      res.json(debug);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // Endpoint para desbloquear empresa manualmente (DEBUG - remover em produção)
+  app.post("/api/debug/desbloquear/:empresaId", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    const empresaId = req.params.empresaId;
+    
+    try {
+      const empresa = await storage.getEmpresa(empresaId, userId);
+      if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+      }
+
+      await storage.updateEmpresa(empresaId, { bloqueadoAte: null }, userId);
+      
+      await storage.createLog({
+        userId,
+        empresaId,
+        sincronizacaoId: null,
+        nivel: "info",
+        mensagem: `Bloqueio removido manualmente via endpoint debug`,
+        detalhes: JSON.stringify({ 
+          empresa: empresa.razaoSocial,
+          bloqueioAnterior: empresa.bloqueadoAte?.toISOString()
+        }),
+      });
+
+      res.json({ 
+        success: true, 
+        mensagem: "Bloqueio removido com sucesso",
+        empresa: empresa.razaoSocial
+      });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== AUTENTICAÇÃO ==========
   app.use("/api/auth", authRoutes);
 
