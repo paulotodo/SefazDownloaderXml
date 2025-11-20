@@ -170,17 +170,83 @@ export class XmlDownloadService {
 
   /**
    * Tenta fazer download do XML completo via consulta por chave
+   * NOVO FLUXO (2024-11):
+   * 1. Verifica se já foi manifestado
+   * 2. Se não foi manifestado, manifesta primeiro (respeitando rate limit)
+   * 3. Só depois tenta o download do XML completo
+   * 4. Sempre respeita limite de 20 consultas/hora por empresa
    */
   private async tentarDownloadXml(xml: Xml, empresa: Empresa): Promise<void> {
     // CRÍTICO: Garante que tentativasDownload é número, não NaN
     const tentativaAtual = xml.tentativasDownload ?? 0;
     const novaTentativa = tentativaAtual + 1;
-    console.log(`[Download Service] Tentando download: ${xml.chaveNFe} (tentativa ${novaTentativa}/${this.MAX_TENTATIVAS})`);
+    console.log(`[Download Service] Processando: ${xml.chaveNFe} (tentativa ${novaTentativa}/${this.MAX_TENTATIVAS})`);
 
+    // ====================
+    // ETAPA 1: MANIFESTAÇÃO
+    // ====================
+    // Verifica se já foi manifestado antes de baixar
+    const manifestacaoExistente = await storage.getManifestacaoByChave(xml.chaveNFe, empresa.userId);
+    
+    if (!manifestacaoExistente) {
+      console.log(`[Download Service] XML não manifestado - tentando manifestar primeiro: ${xml.chaveNFe}`);
+      
+      // Verifica rate limit ANTES de manifestar (máx 20 consultas/hora)
+      const podeManifest = await storage.checkRateLimit(empresa.id, "manifestacao", empresa.userId);
+      if (!podeManifest) {
+        console.warn(`[Download Service] Rate limit excedido para manifestação - pulando por enquanto`);
+        // NÃO incrementa tentativas - rate limit é temporário
+        return;
+      }
+
+      try {
+        // Tenta manifestar Ciência da Operação (210210)
+        await sefazService.manifestarEvento(
+          empresa,
+          xml.chaveNFe,
+          "210210", // Ciência da Operação
+          undefined // Não precisa justificativa
+        );
+        
+        console.log(`[Download Service] ✓ Manifestação (Ciência) enviada: ${xml.chaveNFe}`);
+        
+        await storage.createLog({
+          userId: xml.userId,
+          empresaId: xml.empresaId,
+          nivel: "info",
+          mensagem: `Manifestação automática enviada: NF-e ${xml.numeroNF}`,
+          detalhes: JSON.stringify({ 
+            chaveNFe: xml.chaveNFe,
+            tipoEvento: "210210 - Ciência da Operação"
+          }),
+        });
+      } catch (manifestError: any) {
+        console.error(`[Download Service] ✗ Erro ao manifestar ${xml.chaveNFe}:`, manifestError.message);
+        
+        // Não falha o download por erro de manifestação
+        // Continua para tentar o download mesmo assim
+        await storage.createLog({
+          userId: xml.userId,
+          empresaId: xml.empresaId,
+          nivel: "warning",
+          mensagem: `Erro na manifestação automática (continuando download): NF-e ${xml.numeroNF}`,
+          detalhes: JSON.stringify({ 
+            chaveNFe: xml.chaveNFe,
+            erro: manifestError.message
+          }),
+        });
+      }
+    } else {
+      console.log(`[Download Service] XML já manifestado - prosseguindo com download: ${xml.chaveNFe}`);
+    }
+
+    // ====================
+    // ETAPA 2: DOWNLOAD XML COMPLETO
+    // ====================
     // Verifica rate limit ANTES de consultar SEFAZ (máx 20 consultas/hora)
     const podeConsultar = await storage.checkRateLimit(empresa.id, "consultaChave", empresa.userId);
     if (!podeConsultar) {
-      console.warn(`[Download Service] Rate limit excedido para empresa ${empresa.id} - pulando XML (retry automático após janela)`);
+      console.warn(`[Download Service] Rate limit excedido para download - pulando XML (retry automático após janela)`);
       
       // NÃO grava erro nem incrementa tentativas - rate limit é temporário
       // XML continuará com statusDownload="pendente" e será retentado automaticamente
@@ -195,6 +261,8 @@ export class XmlDownloadService {
     });
 
     try {
+      console.log(`[Download Service] Consultando XML completo: ${xml.chaveNFe}`);
+      
       // Consulta XML completo via chave de acesso
       const resultado = await sefazService.consultarChave(xml.chaveNFe, empresa);
 
