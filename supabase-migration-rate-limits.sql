@@ -50,13 +50,19 @@ CREATE POLICY "Users can update their own rate limits" ON public.rate_limits
 -- 5. Criar função de incremento e verificação de rate limit
 -- Remover TODAS as versões da função (CASCADE remove dependências)
 DO $$ 
+DECLARE
+  v_drop_sql TEXT;
 BEGIN
-  -- Remove todas as sobrecargas da função
-  EXECUTE (
-    SELECT string_agg('DROP FUNCTION IF EXISTS ' || oid::regprocedure || ' CASCADE;', ' ')
-    FROM pg_proc
-    WHERE proname = 'increment_and_check_rate_limit' AND pronamespace = 'public'::regnamespace
-  );
+  -- Busca comandos DROP para todas as versões da função
+  SELECT string_agg('DROP FUNCTION IF EXISTS ' || oid::regprocedure || ' CASCADE;', ' ')
+  INTO v_drop_sql
+  FROM pg_proc
+  WHERE proname = 'increment_and_check_rate_limit' AND pronamespace = 'public'::regnamespace;
+  
+  -- Só executa se encontrou funções para deletar (evita EXECUTE NULL)
+  IF v_drop_sql IS NOT NULL THEN
+    EXECUTE v_drop_sql;
+  END IF;
 END $$;
 
 CREATE OR REPLACE FUNCTION public.increment_and_check_rate_limit(
@@ -107,13 +113,19 @@ $$;
 -- 6. Criar função de limpeza de registros antigos (executar periodicamente)
 -- Remover TODAS as versões da função (CASCADE remove dependências)
 DO $$ 
+DECLARE
+  v_drop_sql TEXT;
 BEGIN
-  -- Remove todas as sobrecargas da função
-  EXECUTE (
-    SELECT string_agg('DROP FUNCTION IF EXISTS ' || oid::regprocedure || ' CASCADE;', ' ')
-    FROM pg_proc
-    WHERE proname = 'cleanup_old_rate_limits' AND pronamespace = 'public'::regnamespace
-  );
+  -- Busca comandos DROP para todas as versões da função
+  SELECT string_agg('DROP FUNCTION IF EXISTS ' || oid::regprocedure || ' CASCADE;', ' ')
+  INTO v_drop_sql
+  FROM pg_proc
+  WHERE proname = 'cleanup_old_rate_limits' AND pronamespace = 'public'::regnamespace;
+  
+  -- Só executa se encontrou funções para deletar (evita EXECUTE NULL)
+  IF v_drop_sql IS NOT NULL THEN
+    EXECUTE v_drop_sql;
+  END IF;
 END $$;
 
 CREATE OR REPLACE FUNCTION public.cleanup_old_rate_limits()
