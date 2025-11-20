@@ -611,6 +611,15 @@ export class SupabaseStorage implements IStorage {
     return parseLog(data);
   }
 
+  async deleteLockLogs(): Promise<void> {
+    const { error } = await supabaseAdmin
+      .from("logs")
+      .delete()
+      .in("mensagem", ["Download Service - Lock Acquired", "Download Service - Lock Released"]);
+
+    if (error) throw new Error(`Erro ao deletar logs de lock: ${error.message}`);
+  }
+
   // ========== MANIFESTAÇÕES DO DESTINATÁRIO (NT 2020.001) ==========
 
   async getManifestacoes(userId?: string): Promise<Manifestacao[]> {

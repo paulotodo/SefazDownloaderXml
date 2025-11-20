@@ -561,6 +561,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Endpoint temporário para limpar logs técnicos de lock
+  app.delete("/api/logs/cleanup-lock-logs", authenticateUser, async (req, res) => {
+    try {
+      await storage.deleteLockLogs();
+      res.json({ message: "Logs de lock removidos com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== SINCRONIZAÇÕES ========== (protegidas)
   app.get("/api/sincronizacoes", authenticateUser, async (req, res) => {
     const userId = req.user!.id;

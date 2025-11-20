@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,9 +10,11 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
-import { Download, Calendar, Filter } from "lucide-react";
+import { Download, Calendar, Filter, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 
 interface Log {
   id: string;
@@ -28,9 +30,32 @@ interface Log {
 export default function Logs() {
   const [nivelFilter, setNivelFilter] = useState<string>("todos");
   const [searchTerm, setSearchTerm] = useState("");
+  const { toast } = useToast();
 
   const { data: logs, isLoading } = useQuery<Log[]>({
     queryKey: ["/api/logs"],
+  });
+
+  const cleanupLockLogsMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("/api/logs/cleanup-lock-logs", {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/logs"] });
+      toast({
+        title: "Logs limpos",
+        description: "Logs técnicos de lock removidos com sucesso",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erro ao limpar logs",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const filteredLogs = logs?.filter((log) => {
@@ -67,10 +92,21 @@ export default function Logs() {
           <h1 className="text-2xl font-semibold" data-testid="heading-logs">Logs de Sincronização</h1>
           <p className="text-sm text-muted-foreground">Histórico detalhado de todas as operações do sistema</p>
         </div>
-        <Button variant="outline" data-testid="button-exportar-logs">
-          <Download className="w-4 h-4 mr-2" />
-          Exportar Logs
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => cleanupLockLogsMutation.mutate()}
+            disabled={cleanupLockLogsMutation.isPending}
+            data-testid="button-cleanup-lock-logs"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Limpar Logs Técnicos
+          </Button>
+          <Button variant="outline" data-testid="button-exportar-logs">
+            <Download className="w-4 h-4 mr-2" />
+            Exportar Logs
+          </Button>
+        </div>
       </div>
 
       <Card>

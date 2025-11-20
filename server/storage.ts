@@ -47,6 +47,7 @@ export interface IStorage {
   getLogs(userId?: string): Promise<Log[]>;
   createLog(log: InsertLog & { userId?: string }): Promise<Log>;
   getLogsRecentes(limit?: number, userId?: string): Promise<Log[]>;
+  deleteLockLogs(): Promise<void>;
 
   // Manifestações do Destinatário (NT 2020.001)
   getManifestacoes(userId?: string): Promise<Manifestacao[]>;
