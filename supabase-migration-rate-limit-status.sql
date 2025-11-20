@@ -10,7 +10,7 @@
 
 CREATE TABLE IF NOT EXISTS sefaz_rate_limit (
   user_id UUID NOT NULL,
-  empresa_id VARCHAR NOT NULL,
+  empresa_id UUID NOT NULL,
   tipo_operacao VARCHAR NOT NULL, -- 'consultaChave', 'distribuicaoDFe', 'recepcaoEvento'
   contador INTEGER NOT NULL DEFAULT 0,
   janela_inicio TIMESTAMP NOT NULL DEFAULT NOW(),
