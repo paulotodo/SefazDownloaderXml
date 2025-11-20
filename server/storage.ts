@@ -41,6 +41,7 @@ export interface IStorage {
   getXmlsHoje(userId?: string): Promise<number>;
   getXmlsPendentesDownload(userId?: string, limit?: number): Promise<Xml[]>;
   getXmlsComErroDownload(userId?: string, limit?: number): Promise<Xml[]>;
+  getXmlsComErroDefinitivo(userId?: string, limit?: number): Promise<Xml[]>;
 
   // Logs
   getLogs(userId?: string): Promise<Log[]>;

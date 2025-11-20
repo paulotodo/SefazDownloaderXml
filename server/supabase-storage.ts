@@ -508,6 +508,7 @@ export class SupabaseStorage implements IStorage {
       .from("xmls")
       .select("*")
       .eq("status_download", "pendente")
+      .eq("tipo_documento", "resNFe") // CRÍTICO: Apenas resNFe (resumos) devem ser baixados
       .order("created_at", { ascending: true })
       .limit(limit);
     
@@ -525,7 +526,8 @@ export class SupabaseStorage implements IStorage {
     let query = supabaseAdmin
       .from("xmls")
       .select("*")
-      .eq("status_download", "pendente") // Busca pendentes, não erro (erro já atingiu o limite)
+      .eq("status_download", "pendente") // Busca pendentes com retry
+      .eq("tipo_documento", "resNFe") // CRÍTICO: Apenas resNFe (resumos)
       .gt("tentativas_download", 0) // Que já tiveram pelo menos uma tentativa
       .lt("tentativas_download", maxTentativas) // Que ainda não atingiram o limite
       .order("ultima_tentativa_download", { ascending: true })
@@ -538,6 +540,25 @@ export class SupabaseStorage implements IStorage {
     const { data, error } = await query;
 
     if (error) throw new Error(`Erro ao buscar XMLs com erro: ${error.message}`);
+    return (data || []).map(parseXml);
+  }
+
+  async getXmlsComErroDefinitivo(userId?: string, limit: number = 100): Promise<Xml[]> {
+    let query = supabaseAdmin
+      .from("xmls")
+      .select("*")
+      .eq("status_download", "erro") // XMLs que falharam permanentemente
+      .eq("tipo_documento", "resNFe") // Apenas resNFe
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+    
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw new Error(`Erro ao buscar XMLs com erro definitivo: ${error.message}`);
     return (data || []).map(parseXml);
   }
 

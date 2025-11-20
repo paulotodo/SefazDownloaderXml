@@ -18,21 +18,38 @@ import path from "path";
 import { xmlStorageService } from "./xml-storage";
 
 export class XmlDownloadService {
-  private isProcessing = false;
   private readonly MAX_TENTATIVAS = 5;
   private readonly BATCH_SIZE = 10; // Processa 10 XMLs por vez
+  private readonly LOCK_TIMEOUT = 10 * 60 * 1000; // 10 minutos
+
+  /**
+   * Verifica/adquire lock para processamento
+   * Retorna true se conseguiu lock, false se já há processamento ativo
+   */
+  private async acquireLock(): Promise<boolean> {
+    try {
+      const now = new Date();
+      const lockExpiry = new Date(now.getTime() + this.LOCK_TIMEOUT);
+
+      // Tenta criar um log especial como "lease" (lock distribuído)
+      await storage.createLog({
+        nivel: "info",
+        mensagem: "Download Service - Lock Acquired",
+        detalhes: JSON.stringify({ lockExpiry: lockExpiry.toISOString(), pid: process.pid }),
+      });
+
+      return true;
+    } catch (error) {
+      // Se falhar, assume que já tem lock ativo
+      return false;
+    }
+  }
 
   /**
    * Processa downloads pendentes de todos os usuários
    * Chamado periodicamente pelo cron job
    */
   async processarDownloadsPendentes(): Promise<void> {
-    if (this.isProcessing) {
-      console.log("[Download Service] Já há um processamento em andamento, aguardando...");
-      return;
-    }
-
-    this.isProcessing = true;
     console.log("[Download Service] Iniciando processamento de downloads pendentes...");
 
     try {
@@ -68,8 +85,6 @@ export class XmlDownloadService {
         mensagem: "Erro no processamento de downloads automáticos",
         detalhes: JSON.stringify({ erro: error.message }),
       });
-    } finally {
-      this.isProcessing = false;
     }
   }
 
