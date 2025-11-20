@@ -571,6 +571,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Endpoint de debug para verificar XMLs com erro
+  app.get("/api/debug/xmls-status", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const xmlsComErro = await storage.getXmlsComErroDefinitivo(userId);
+      const xmlsPendentes = await storage.getXmlsPendentesDownload(userId, 10);
+      const xmlsRetry = await storage.getXmlsComErroDownload(userId, 10);
+
+      res.json({
+        erros: xmlsComErro.map(x => ({
+          chave: x.chaveNFe,
+          tipo: x.tipoDocumento,
+          tentativas: x.tentativasDownload,
+          erro: x.erroDownload
+        })),
+        pendentes: xmlsPendentes.map(x => ({
+          chave: x.chaveNFe,
+          tentativas: x.tentativasDownload
+        })),
+        retry: xmlsRetry.map(x => ({
+          chave: x.chaveNFe,
+          tentativas: x.tentativasDownload,
+          erro: x.erroDownload
+        }))
+      });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== SINCRONIZAÇÕES ========== (protegidas)
   app.get("/api/sincronizacoes", authenticateUser, async (req, res) => {
     const userId = req.user!.id;
