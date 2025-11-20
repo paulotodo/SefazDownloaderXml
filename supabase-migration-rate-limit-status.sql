@@ -86,8 +86,6 @@ WHERE erro_download LIKE '%Rate limit%'
   AND status_download = 'erro'
   AND tipo_documento = 'resNFe';
 
-RAISE NOTICE '→ Erros legacy de rate limit limpos - XMLs voltam para retry automático';
-
 -- ========================================
 -- 4. FUNÇÃO AUXILIAR: RESET RATE LIMIT
 -- ========================================
