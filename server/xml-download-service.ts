@@ -39,16 +39,6 @@ export class XmlDownloadService {
 
       console.log("[Download Service] Lock adquirido com sucesso");
       this.lockAcquired = true;
-      
-      // Log para auditoria (não para controle de lock)
-      await storage.createLog({
-        nivel: "info",
-        mensagem: "Download Service - Lock Acquired",
-        detalhes: JSON.stringify({ 
-          timestamp: new Date().toISOString(),
-          pid: process.pid 
-        }),
-      });
 
       return true;
     } catch (error) {
@@ -67,16 +57,6 @@ export class XmlDownloadService {
       await storage.releaseDownloadLock();
       
       console.log("[Download Service] Lock liberado com sucesso");
-      
-      // Log para auditoria
-      await storage.createLog({
-        nivel: "info",
-        mensagem: "Download Service - Lock Released",
-        detalhes: JSON.stringify({ 
-          timestamp: new Date().toISOString(),
-          pid: process.pid 
-        }),
-      });
       
       this.lockAcquired = false;
     } catch (error) {
