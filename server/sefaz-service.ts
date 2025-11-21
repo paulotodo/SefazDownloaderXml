@@ -1199,17 +1199,18 @@ export class SefazService {
   }
 
   /**
-   * Retorna descrição amigável do tipo de evento
-   * NT 2020.001: Descrições SEM ACENTOS conforme especificação oficial
+   * Retorna descrição oficial do tipo de evento
+   * NT 2020.001 Tabela 3.1: Descrições COM ACENTOS conforme XSD oficial
+   * CRÍTICO: SEFAZ valida descEvento contra schema (xs:enumeration) - strings EXATAS obrigatórias
    */
   private getTipoEventoDescricao(tpEvento: string): string {
     const tipos: Record<string, string> = {
-      "110110": "Carta de Correcao",
+      "110110": "Carta de Correção",
       "110111": "Cancelamento",
-      "210200": "Confirmacao da Operacao",
-      "210210": "Ciencia da Operacao",
-      "210220": "Desconhecimento da Operacao",
-      "210240": "Operacao nao Realizada",
+      "210200": "Confirmação da Operação",
+      "210210": "Ciência da Operação",
+      "210220": "Desconhecimento da Operação",
+      "210240": "Operação não Realizada",
     };
     return tipos[tpEvento] || `Evento ${tpEvento}`;
   }
