@@ -18,7 +18,7 @@ import path from "path";
 import { xmlStorageService } from "./xml-storage";
 
 export class XmlDownloadService {
-  private readonly MAX_TENTATIVAS = 2; // Máximo de 2 tentativas por XML
+  private readonly MAX_TENTATIVAS = 999; // Retry infinito - sempre tenta baixar e manifestar
   private readonly BATCH_SIZE = 10; // Processa 10 XMLs por vez
   private readonly LOCK_TIMEOUT = 3 * 60 * 1000; // 3 minutos (menos que intervalo do cron de 5min)
   private lockAcquired: boolean = false; // Flag se lock foi adquirido
@@ -175,10 +175,25 @@ export class XmlDownloadService {
    * 5. Sempre respeita limite de 20 consultas/hora por empresa
    */
   private async tentarDownloadXml(xml: Xml, empresa: Empresa): Promise<void> {
-    // CRÍTICO: Garante que tentativasDownload é número, não NaN
+    // RETRY INFINITO: Reseta XMLs com erro definitivo para pendente ao retentar
+    if (xml.statusDownload === "erro") {
+      console.log(`[Download Service] Resetando XML com erro para pendente (retry infinito): ${xml.chaveNFe}`);
+      await storage.updateXml(xml.id, {
+        statusDownload: "pendente",
+        tentativasDownload: 0, // CRÍTICO: Reseta contador de tentativas para permitir retry infinito
+        erroDownload: null, // Limpa mensagem de erro anterior
+      });
+      // Atualiza objeto local para refletir reset
+      xml.statusDownload = "pendente";
+      xml.tentativasDownload = 0;
+      xml.erroDownload = null;
+    }
+
+    // CRÍTICO: Calcula tentativa APÓS reset (garante que valor reflete estado atual)
     const tentativaAtual = xml.tentativasDownload ?? 0;
     const novaTentativa = tentativaAtual + 1;
-    console.log(`[Download Service] Processando: ${xml.chaveNFe} (tentativa download ${novaTentativa}/${this.MAX_TENTATIVAS})`);
+    console.log(`[Download Service] Processando: ${xml.chaveNFe} (tentativa download ${novaTentativa})`);
+
 
     // ====================
     // ETAPA 1: MANIFESTAÇÃO
@@ -190,11 +205,8 @@ export class XmlDownloadService {
       // Verifica tentativas de manifestação (separado de tentativas de download)
       const tentativasManifestacao = manifestacaoExistente?.tentativas ?? 0;
       
-      if (tentativasManifestacao >= this.MAX_TENTATIVAS) {
-        console.warn(`[Download Service] Manifestação atingiu ${tentativasManifestacao} tentativas - pulando por enquanto`);
-        // NÃO tenta download sem manifestação válida
-        return;
-      }
+      // REMOVIDO LIMITE - retry infinito de manifestação
+      // Sempre tenta manifestar, independente do número de tentativas anteriores
       
       console.log(`[Download Service] XML não manifestado ou com erro - tentando manifestar: ${xml.chaveNFe} (tentativa manifestação ${tentativasManifestacao + 1}/${this.MAX_TENTATIVAS})`);
       
@@ -256,15 +268,8 @@ export class XmlDownloadService {
     // ====================
     // ETAPA 2: DOWNLOAD XML COMPLETO
     // ====================
-    // Verifica se já atingiu limite de tentativas de DOWNLOAD
-    if (tentativaAtual >= this.MAX_TENTATIVAS) {
-      console.warn(`[Download Service] Download já atingiu ${tentativaAtual} tentativas - marcando como erro permanente`);
-      await storage.updateXml(xml.id, {
-        statusDownload: "erro",
-        erroDownload: `Máximo de ${this.MAX_TENTATIVAS} tentativas de download atingido`,
-      });
-      return;
-    }
+    // RETRY INFINITO: Removido limite de tentativas - sempre tenta download
+    // Rate limit é a única proteção (20 consultas/hora por empresa)
     
     // Verifica rate limit ANTES de consultar SEFAZ (máx 20 consultas/hora)
     const podeConsultar = await storage.checkRateLimit(empresa.id, "consultaChave", empresa.userId);
@@ -312,27 +317,25 @@ export class XmlDownloadService {
     } catch (error: any) {
       console.error(`[Download Service] ✗ Erro ao baixar ${xml.chaveNFe}:`, error.message);
 
-      // Se atingiu limite, marca como erro permanente. Senão, mantém pendente para retry
-      const novoStatus = novaTentativa >= this.MAX_TENTATIVAS ? "erro" : "pendente";
-
+      // RETRY INFINITO: Sempre mantém como "pendente" para retry automático
+      // Não marca como "erro" permanente - sistema retenta indefinidamente
       await storage.updateXml(xml.id, {
-        statusDownload: novoStatus,
+        statusDownload: "pendente",
         erroDownload: error.message.substring(0, 500), // Limita tamanho do erro
       });
 
-      if (novoStatus === "erro") {
-        await storage.createLog({
-          userId: xml.userId,
-          empresaId: xml.empresaId,
-          nivel: "warning",
-          mensagem: `Falha no download automático após ${this.MAX_TENTATIVAS} tentativas: NF-e ${xml.numeroNF}`,
-          detalhes: JSON.stringify({ 
-            chaveNFe: xml.chaveNFe,
-            ultimoErro: error.message.substring(0, 500),
-            tentativas: this.MAX_TENTATIVAS
-          }),
-        });
-      }
+      // Log de erro (informativo, não crítico)
+      await storage.createLog({
+        userId: xml.userId,
+        empresaId: xml.empresaId,
+        nivel: "warning",
+        mensagem: `Erro no download automático (retry na próxima execução): NF-e ${xml.numeroNF}`,
+        detalhes: JSON.stringify({ 
+          chaveNFe: xml.chaveNFe,
+          ultimoErro: error.message.substring(0, 500),
+          tentativa: novaTentativa
+        }),
+      });
     }
   }
 

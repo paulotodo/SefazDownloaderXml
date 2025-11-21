@@ -531,14 +531,14 @@ export class SupabaseStorage implements IStorage {
     return (data || []).map(parseXml);
   }
 
-  async getXmlsComErroDownload(userId?: string, limit: number = 50, maxTentativas: number = 5): Promise<Xml[]> {
+  async getXmlsComErroDownload(userId?: string, limit: number = 50, maxTentativas: number = 999): Promise<Xml[]> {
+    // Busca XMLs com erro (pendente com tentativas OU erro definitivo) para retry infinito
+    // RETRY INFINITO: Removido filtro .gt("tentativas_download", 0) para incluir XMLs resetados
     let query = supabaseAdmin
       .from("xmls")
       .select("*")
-      .eq("status_download", "pendente") // Busca pendentes com retry
       .eq("tipo_documento", "resNFe") // CRÍTICO: Apenas resNFe (resumos)
-      .gt("tentativas_download", 0) // Que já tiveram pelo menos uma tentativa
-      .lt("tentativas_download", maxTentativas) // Que ainda não atingiram o limite
+      .eq("status_download", "erro") // Busca apenas status "erro" (pendentes vão por getXmlsPendentesDownload)
       .order("ultima_tentativa_download", { ascending: true })
       .limit(limit);
     
