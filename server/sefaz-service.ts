@@ -935,7 +935,11 @@ export class SefazService {
     }
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/numeroNF.xml
-    const dataEmissao = new Date(dhEmi);
+    // CORREÇÃO: Garantir que dataEmissao seja Date válido
+    const dataEmissao = dhEmi instanceof Date ? dhEmi : new Date(dhEmi);
+    if (isNaN(dataEmissao.getTime())) {
+      throw new Error(`Data de emissão inválida: ${dhEmi}`);
+    }
     const ano = dataEmissao.getFullYear();
     const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
     const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
@@ -1030,7 +1034,11 @@ export class SefazService {
     const modelo = chNFe.substring(20, 22) || "55";
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Resumos/CHAVEnsu_NSU.xml
-    const dataEmissao = new Date(dhEmi);
+    // CORREÇÃO: Garantir que dataEmissao seja Date válido
+    const dataEmissao = dhEmi instanceof Date ? dhEmi : new Date(dhEmi);
+    if (isNaN(dataEmissao.getTime())) {
+      throw new Error(`Data de emissão inválida no resNFe: ${dhEmi}`);
+    }
     const ano = dataEmissao.getFullYear();
     const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
     const tipoDoc = modelo === "65" ? "NFCe" : "NFe";
@@ -1179,7 +1187,11 @@ export class SefazService {
     }
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Eventos/CHAVE_tpEvento_seq.xml
-    const dataEmissao = new Date(dhEvento);
+    // CORREÇÃO: Garantir que dataEmissao seja Date válido
+    const dataEmissao = dhEvento instanceof Date ? dhEvento : new Date(dhEvento);
+    if (isNaN(dataEmissao.getTime())) {
+      throw new Error(`Data de evento inválida no procEventoNFe: ${dhEvento}`);
+    }
     const ano = dataEmissao.getFullYear();
     const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
     
@@ -1258,7 +1270,11 @@ export class SefazService {
     }
 
     // Estrutura: xmls/NFe|NFCe/CNPJ/ANO/MES/Eventos/Resumos/CHAVE_tpEvento_nsu.xml
-    const dataEmissao = new Date(dhEvento);
+    // CORREÇÃO: Garantir que dataEmissao seja Date válido
+    const dataEmissao = dhEvento instanceof Date ? dhEvento : new Date(dhEvento);
+    if (isNaN(dataEmissao.getTime())) {
+      throw new Error(`Data de evento inválida no resEvento: ${dhEvento}`);
+    }
     const ano = dataEmissao.getFullYear();
     const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
     
