@@ -381,6 +381,12 @@ export class SefazService {
 
     // ID do evento: "ID" + tpEvento + chNFe + nSeqEvento (2 dígitos)
     const idEvento = `ID${tpEvento}${chaveNFe}${nSeqEvento.toString().padStart(2, "0")}`;
+    
+    // DEBUG: Verificar comprimentos
+    console.log(`[DEBUG ID] tpEvento: ${tpEvento} (${tpEvento.length} chars)`);
+    console.log(`[DEBUG ID] chaveNFe: ${chaveNFe} (${chaveNFe.length} chars)`);
+    console.log(`[DEBUG ID] nSeqEvento: ${nSeqEvento.toString().padStart(2, "0")} (${nSeqEvento.toString().padStart(2, "0").length} chars)`);
+    console.log(`[DEBUG ID] idEvento: ${idEvento} (${idEvento.length} chars, esperado 54)`);
 
     // Descrição do evento conforme tipo
     const descEvento = this.getTipoEventoDescricao(tpEvento);
@@ -389,9 +395,10 @@ export class SefazService {
     // Conforme NT 2020.001, detEvento precisa estar dentro de infEvento
     const xJustXML = justificativa ? `<xJust>${justificativa}</xJust>` : '';
 
-    // CORREÇÃO CRÍTICA: Adicionar campos obrigatórios em envEvento conforme exemplo fornecido
-    // - tpAmb, verAplic, cOrgao devem estar DENTRO de envEvento (não apenas em infEvento)
-    const verAplic = 'SEFAZ-XML-Sync-v1.0';
+    // CORREÇÃO CRÍTICA NT 2020.001:
+    // - envEvento só pode conter: idLote + evento(s)
+    // - tpAmb, verAplic, cOrgao aparecem apenas na resposta (retEnvEvento)
+    // - No envio, esses campos devem estar SOMENTE dentro de infEvento
 
     return `<?xml version="1.0" encoding="utf-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -401,9 +408,6 @@ export class SefazService {
     <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
       <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
         <idLote>1</idLote>
-        <tpAmb>${tpAmb}</tpAmb>
-        <verAplic>${verAplic}</verAplic>
-        <cOrgao>91</cOrgao>
         <evento versao="1.00">
           <infEvento Id="${idEvento}">
             <cOrgao>91</cOrgao>
@@ -414,7 +418,7 @@ export class SefazService {
             <tpEvento>${tpEvento}</tpEvento>
             <nSeqEvento>${nSeqEvento}</nSeqEvento>
             <verEvento>1.00</verEvento>
-            <detEvento versao="1.00">
+            <detEvento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">
               <descEvento>${descEvento}</descEvento>${xJustXML}
             </detEvento>
           </infEvento>
@@ -1326,6 +1330,9 @@ export class SefazService {
         empresa.ambiente,
         justificativa
       );
+
+      // DEBUG: Mostra envelope completo sendo enviado
+      console.log(`[Manifestação] 📤 ENVELOPE SOAP ENVIANDO:\n${envelope}`);
 
       // Envia para SEFAZ
       const responseXML = await this.callRecepcaoEvento(empresa, envelope);
