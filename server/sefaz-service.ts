@@ -5,6 +5,8 @@ import fsSync from "fs";
 import path from "path";
 import { XMLParser } from "fast-xml-parser";
 import * as pako from "pako";
+import { SignedXml } from "xml-crypto";
+import { DOMParser, XMLSerializer } from "xmldom";
 import { storage } from "./storage";
 import type { Empresa } from "@shared/schema";
 import { loadPKCS12Certificate } from "./cert-loader";
@@ -54,6 +56,64 @@ interface SefazResponse {
     schema: string;
     content: string;
   }>;
+}
+
+/**
+ * Assina digitalmente o XML do evento conforme padrão XML Signature
+ * NT 2020.001 exige assinatura digital em todos os eventos de manifestação
+ * 
+ * @param xmlEvento - XML do elemento <evento> (sem assinatura)
+ * @param privateKey - Chave privada em formato PEM
+ * @param certificate - Certificado em formato PEM
+ * @returns XML do evento assinado (com tag <Signature>)
+ */
+function signXmlEvento(xmlEvento: string, privateKey: string, certificate: string): string {
+  try {
+    // Criar assinatura com xml-crypto v6.x API
+    const sig = new SignedXml({
+      signatureAlgorithm: 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
+    });
+    
+    // Adicionar referência ao elemento infEvento (que possui atributo Id)
+    sig.addReference({
+      xpath: "//*[local-name()='infEvento']",
+      transforms: [
+        'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+        'http://www.w3.org/2001/10/xml-exc-c14n#'
+      ],
+      digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256'
+    });
+    
+    // Configurar chave privada (após addReference conforme documentação)
+    (sig as any).signingKey = privateKey;
+    
+    // Configurar algoritmo de canonicalização
+    (sig as any).canonicalizationAlgorithm = 'http://www.w3.org/2001/10/xml-exc-c14n#';
+    
+    // Adicionar certificado X509 no KeyInfo
+    (sig as any).keyInfoProvider = {
+      getKeyInfo: function() {
+        const cleanCert = certificate
+          .replace(/-----BEGIN CERTIFICATE-----/g, '')
+          .replace(/-----END CERTIFICATE-----/g, '')
+          .replace(/\s/g, '');
+        
+        return `<X509Data><X509Certificate>${cleanCert}</X509Certificate></X509Data>`;
+      }
+    };
+    
+    // Computar assinatura e inserir no final de <evento>
+    sig.computeSignature(xmlEvento, {
+      prefix: 'ds',
+      location: { reference: "//*[local-name()='evento']", action: 'append' }
+    });
+    
+    // Retornar XML assinado
+    return sig.getSignedXml();
+  } catch (error: any) {
+    console.error('[Assinatura XML] Erro ao assinar evento:', error.message);
+    throw new Error(`Falha na assinatura digital do evento: ${error.message}`);
+  }
 }
 
 export class SefazService {
@@ -183,12 +243,16 @@ export class SefazService {
    * - 210220: Desconhecimento da Operação
    * - 210240: Operação não Realizada (requer justificativa)
    * 
+   * IMPORTANTE: Assina digitalmente o evento usando certificado A1/A3
+   * 
    * @param cnpj - CNPJ do destinatário manifestante
    * @param chaveNFe - Chave de acesso de 44 dígitos da NF-e
    * @param tpEvento - Tipo de evento (210200, 210210, 210220, 210240)
    * @param nSeqEvento - Número sequencial do evento (sempre 1 para manifestação)
    * @param ambiente - Ambiente ('producao' ou 'homologacao')
    * @param justificativa - Justificativa (obrigatória para 210240, opcional para outros)
+   * @param privateKey - Chave privada do certificado (PEM)
+   * @param certificate - Certificado digital (PEM)
    */
   private buildSOAPEnvelopeManifestacao(
     cnpj: string,
@@ -196,7 +260,9 @@ export class SefazService {
     tpEvento: string,
     nSeqEvento: number,
     ambiente: string,
-    justificativa?: string
+    justificativa?: string,
+    privateKey?: string,
+    certificate?: string
   ): string {
     const tpAmb = ambiente.toLowerCase().startsWith("prod") ? "1" : "2";
     
@@ -267,6 +333,10 @@ export class SefazService {
     // Conforme NT 2020.001, detEvento precisa estar dentro de infEvento
     const xJustXML = justificativa ? `<xJust>${justificativa}</xJust>` : '';
 
+    // CORREÇÃO CRÍTICA: Adicionar campos obrigatórios em envEvento conforme exemplo fornecido
+    // - tpAmb, verAplic, cOrgao devem estar DENTRO de envEvento (não apenas em infEvento)
+    const verAplic = 'SEFAZ-XML-Sync-v1.0';
+
     return `<?xml version="1.0" encoding="utf-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
@@ -275,6 +345,9 @@ export class SefazService {
     <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
       <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
         <idLote>1</idLote>
+        <tpAmb>${tpAmb}</tpAmb>
+        <verAplic>${verAplic}</verAplic>
+        <cOrgao>91</cOrgao>
         <evento versao="1.00">
           <infEvento Id="${idEvento}">
             <cOrgao>91</cOrgao>
