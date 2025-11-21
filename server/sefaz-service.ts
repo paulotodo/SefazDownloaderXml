@@ -441,6 +441,7 @@ export class SefazService {
     const eventoConteudo = eventoMatch[1];
 
     // PASSO 4: Embutir evento assinado no SOAP envelope
+    // CORREÇÃO cStat 215: Adicionar xmlns explicitamente no <evento> (xml-crypto remove namespace ao serializar)
     return `<?xml version="1.0" encoding="utf-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
@@ -449,7 +450,7 @@ export class SefazService {
     <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
       <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
         <idLote>1</idLote>
-        <evento versao="1.00">${eventoConteudo}</evento>
+        <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">${eventoConteudo}</evento>
       </envEvento>
     </nfeDadosMsg>
   </soap12:Body>
