@@ -38,6 +38,13 @@ const ENDPOINTS_RECEPCAO_EVENTO = {
   hom: "https://nfe-homologacao.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx",
 };
 
+// Endpoints para NfeDownloadNF (Download de XML Completo)
+// Endpoint Nacional conforme documentação SEFAZ
+const ENDPOINTS_DOWNLOAD_NF = {
+  prod: "https://www.nfe.fazenda.gov.br/NfeDownloadNF/NfeDownloadNF.asmx",
+  hom: "https://hom.nfe.fazenda.gov.br/NfeDownloadNF/NfeDownloadNF.asmx",
+};
+
 // Tipos de Evento de Manifestação do Destinatário (NT 2020.001)
 export const TIPOS_MANIFESTACAO = {
   CONFIRMACAO: "210200", // Confirmação da Operação
@@ -206,6 +213,55 @@ export class SefazService {
    * @param uf - UF de autorização (ex: 'SP', 'MG')
    * @param ambiente - Ambiente ('producao' ou 'homologacao')
    * @param chaveNFe - Chave de acesso de 44 dígitos da NF-e/NFC-e
+   */
+  /**
+   * Monta SOAP envelope para NfeDownloadNF (Download de XML Completo)
+   * Conforme exemplo funcional fornecido - usa endpoint NfeDownloadNF.asmx
+   * 
+   * IMPORTANTE: Este é o método CORRETO para download de XML completo após manifestação
+   * - Endpoint: NfeDownloadNF.asmx (não NFeDistribuicaoDFe)
+   * - SOAP 1.2 com namespace soap (não soap12)
+   * - Header com nfeCabecMsg contendo cUF e versaoDados
+   * - Body com downloadNFe contendo tpAmb, xServ, CNPJ, chNFe
+   * 
+   * @param cnpj - CNPJ da empresa destinatária
+   * @param uf - UF de autorização (ex: 'SP', 'MG')
+   * @param ambiente - Ambiente ('producao' ou 'homologacao')
+   * @param chaveNFe - Chave de acesso da NF-e (44 dígitos)
+   */
+  private buildSOAPEnvelopeDownloadNFe(cnpj: string, uf: string, ambiente: string, chaveNFe: string): string {
+    const cUF = UF_CODE_MAP[uf.toUpperCase()] || 35;
+    const tpAmb = ambiente.toLowerCase().startsWith("prod") ? "1" : "2";
+
+    if (!chaveNFe || chaveNFe.length !== 44) {
+      throw new Error(`Chave de acesso inválida: ${chaveNFe} (deve ter 44 dígitos)`);
+    }
+
+    // SOAP envelope conforme exemplo funcional fornecido
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <soap:Header>
+        <nfeCabecMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NfeDownloadNF">
+            <cUF>${cUF}</cUF>
+            <versaoDados>1.00</versaoDados>
+        </nfeCabecMsg>
+    </soap:Header>
+    <soap:Body>
+        <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NfeDownloadNF">
+            <downloadNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+                <tpAmb>${tpAmb}</tpAmb>
+                <xServ>DOWNLOAD NFE</xServ>
+                <CNPJ>${cnpj}</CNPJ>
+                <chNFe>${chaveNFe}</chNFe>
+            </downloadNFe>
+        </nfeDadosMsg>
+    </soap:Body>
+</soap:Envelope>`;
+  }
+
+  /**
+   * MÉTODO LEGADO - Usar buildSOAPEnvelopeDownloadNFe para download de XML completo
+   * @deprecated Use buildSOAPEnvelopeDownloadNFe() em vez de consChNFe
    */
   private buildSOAPEnvelopeConsChNFe(cnpj: string, uf: string, ambiente: string, chaveNFe: string): string {
     const cufAutor = UF_CODE_MAP[uf.toUpperCase()] || 35;
@@ -433,6 +489,75 @@ export class SefazService {
 
         req.on("error", (error) => {
           reject(new Error(`Erro na requisição HTTPS: ${error.message}`));
+        });
+
+        req.write(envelope);
+        req.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Envia requisição SOAP para NfeDownloadNF (Download de XML Completo)
+   * Endpoint específico para download de XMLs após manifestação
+   */
+  private async callDownloadNFe(
+    empresa: Empresa,
+    envelope: string
+  ): Promise<string> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const url = new URL(ENDPOINTS_DOWNLOAD_NF[empresa.ambiente as "prod" | "hom"]);
+
+        let certData;
+        try {
+          certData = await loadPKCS12Certificate(
+            empresa.certificadoPath,
+            empresa.certificadoSenha
+          );
+        } catch (error: any) {
+          throw error;
+        }
+
+        // HTTPS Agent com certificado cliente A1/A3
+        // IMPORTANTE: rejectUnauthorized=false para aceitar certificados auto-assinados SEFAZ
+        const agent = new https.Agent({
+          key: certData.key,
+          cert: certData.cert,
+          rejectUnauthorized: false,
+          secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+          minVersion: 'TLSv1.2' as any,
+          maxVersion: 'TLSv1.3' as any,
+        });
+
+        const options: https.RequestOptions = {
+          hostname: url.hostname,
+          port: 443,
+          path: url.pathname,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/soap+xml; charset=utf-8",
+            "Content-Length": Buffer.byteLength(envelope),
+          },
+          agent,
+        };
+
+        const req = https.request(options, (res) => {
+          let data = "";
+          res.on("data", (chunk) => (data += chunk));
+          res.on("end", () => {
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            } else {
+              resolve(data);
+            }
+          });
+        });
+
+        req.on("error", (error) => {
+          reject(new Error(`Erro na requisição HTTPS NfeDownloadNF: ${error.message}`));
         });
 
         req.write(envelope);
@@ -1067,54 +1192,101 @@ export class SefazService {
    * @param empresa - Dados da empresa
    * @returns Objeto com xmlContent e cStat, ou null se não encontrado
    */
+  /**
+   * Baixa XML completo usando NfeDownloadNF endpoint
+   * NOVO: Usa endpoint específico de download (não NFeDistribuicaoDFe)
+   * Conforme exemplo funcional fornecido
+   */
   async consultarChave(chaveNFe: string, empresa: Empresa): Promise<{ xmlContent: string; cStat: string } | null> {
     try {
-      console.log(`[consChNFe] Consultando chave ${chaveNFe} para empresa ${empresa.cnpj}`);
+      console.log(`[downloadNFe] Baixando XML completo ${chaveNFe} para empresa ${empresa.cnpj}`);
 
-      const envelope = this.buildSOAPEnvelopeConsChNFe(
+      // USA NOVO ENVELOPE com NfeDownloadNF
+      const envelope = this.buildSOAPEnvelopeDownloadNFe(
         empresa.cnpj,
         empresa.uf,
         empresa.ambiente,
         chaveNFe
       );
 
-      const responseXML = await this.callDistDFe(empresa, envelope);
-      const response = this.parseSOAPResponse(responseXML);
+      // USA NOVO ENDPOINT callDownloadNFe
+      const responseXML = await this.callDownloadNFe(empresa, envelope);
+      
+      // Log da resposta completa para debug
+      console.log(`[downloadNFe] Resposta SOAP recebida (primeiros 500 chars): ${responseXML.substring(0, 500)}`);
+      
+      const parsed = this.parser.parse(responseXML);
+
+      // Extrai retorno do NfeDownloadNF
+      // Estrutura: soap:Envelope > soap:Body > nfeDownloadNFResponse > nfeDownloadNFResult > retDownloadNFe
+      const envelope_soap = parsed["soap:Envelope"] || parsed["soap12:Envelope"] || parsed["Envelope"];
+      if (!envelope_soap) {
+        console.error('[downloadNFe] ❌ Envelope SOAP não encontrado. Keys:', Object.keys(parsed));
+        throw new Error("Resposta SEFAZ inválida: Envelope SOAP não encontrado");
+      }
+      
+      const body = envelope_soap["soap:Body"] || envelope_soap["soap12:Body"] || envelope_soap["Body"];
+      if (!body) {
+        console.error('[downloadNFe] ❌ Body SOAP não encontrado. Keys envelope:', Object.keys(envelope_soap));
+        throw new Error("Resposta SEFAZ inválida: Body SOAP não encontrado");
+      }
+      
+      // Busca nfeDownloadNFResult
+      const nfeDownloadNFResult = 
+        body["nfeDownloadNFResult"] || 
+        body["nfeDownloadNFResponse"]?.["nfeDownloadNFResult"];
+      
+      if (!nfeDownloadNFResult) {
+        console.error('[downloadNFe] ❌ nfeDownloadNFResult não encontrado. Keys body:', Object.keys(body));
+        throw new Error("Resposta SEFAZ inválida: nfeDownloadNFResult não encontrado");
+      }
+      
+      const retDownloadNFe = nfeDownloadNFResult["retDownloadNFe"];
+      if (!retDownloadNFe) {
+        console.error('[downloadNFe] ❌ retDownloadNFe não encontrado. Keys:', Object.keys(nfeDownloadNFResult));
+        throw new Error("Resposta SEFAZ inválida: retDownloadNFe não encontrado");
+      }
+      
+      const cStat = String(retDownloadNFe.cStat || "");
+      const xMotivo = String(retDownloadNFe.xMotivo || "");
 
       await storage.createLog({
         userId: empresa.userId,
         empresaId: empresa.id,
         nivel: "info",
-        mensagem: `consChNFe: ${response.cStat} - ${response.xMotivo}`,
-        detalhes: JSON.stringify({ chaveNFe, cStat: response.cStat }),
+        mensagem: `downloadNFe: ${cStat} - ${xMotivo}`,
+        detalhes: JSON.stringify({ chaveNFe, cStat }),
       });
 
-      // cStat 138: Documento localizado
-      if (response.cStat === "138" && response.docZips && response.docZips.length > 0) {
-        const docZip = response.docZips[0];
-        const xmlContent = this.decompressDocZip(docZip.content);
+      // cStat 139: Download autorizado (XML completo disponível)
+      if (cStat === "139" && retDownloadNFe.procNFe) {
+        // O XML já vem decodificado na resposta (procNFe é o nfeProc)
+        const procNFeBase64 = retDownloadNFe.procNFe;
+        const xmlContent = Buffer.from(procNFeBase64, 'base64').toString('utf-8');
+        
         const parsed = this.parser.parse(xmlContent);
 
         // Verifica se é nfeProc (XML completo)
         if (parsed.nfeProc) {
-          console.log(`[consChNFe] XML completo encontrado para chave ${chaveNFe}`);
-          return { xmlContent, cStat: response.cStat };
+          console.log(`[downloadNFe] ✓ XML completo baixado para chave ${chaveNFe}`);
+          return { xmlContent, cStat };
         } else {
-          console.warn(`[consChNFe] Chave ${chaveNFe} retornou documento que não é nfeProc:`, Object.keys(parsed));
+          console.warn(`[downloadNFe] Chave ${chaveNFe} retornou documento que não é nfeProc:`, Object.keys(parsed));
           return null;
         }
       }
 
-      // cStat 656: Consumo indevido (já consultado antes)
+      // cStat 138: Documento localizado (mas sem permissão de download)
       // cStat 137: Nenhum documento encontrado
-      console.log(`[consChNFe] Chave ${chaveNFe} não retornou nfeProc (cStat=${response.cStat})`);
+      // cStat 656: Consumo indevido (já consultado antes)
+      console.log(`[downloadNFe] Chave ${chaveNFe} não retornou nfeProc (cStat=${cStat}: ${xMotivo})`);
       return null;
     } catch (error) {
       await storage.createLog({
         userId: empresa.userId,
         empresaId: empresa.id,
         nivel: "error",
-        mensagem: `Erro em consChNFe: ${String(error)}`,
+        mensagem: `Erro em downloadNFe: ${String(error)}`,
         detalhes: JSON.stringify({ chaveNFe, error: String(error) }),
       });
       throw error;
