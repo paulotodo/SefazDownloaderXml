@@ -32,10 +32,10 @@ const ENDPOINTS = {
 };
 
 // Endpoints para NFeRecepcaoEvento (Manifestação do Destinatário)
-// NT 2020.001: Usa SEFAZ Virtual RS para todos os Estados
+// NT 2020.001: Usa Ambiente Nacional (cOrgao=91)
 const ENDPOINTS_RECEPCAO_EVENTO = {
-  prod: "https://nfe.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx",
-  hom: "https://nfe-homologacao.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx",
+  prod: "https://www.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx",
+  hom: "https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx",
 };
 
 // Endpoints para NfeDownloadNF (Download de XML Completo)
@@ -100,8 +100,10 @@ function signXmlEvento(xmlEvento: string, privateKey: string, certificate: strin
     
     // Computar assinatura e inserir no final de <evento>
     // publicCert já configura automaticamente <KeyInfo><X509Certificate>
+    // CRÍTICO: Ambiente Nacional REJEITA prefixos de namespace (cStat 404)
+    // Usar prefix: '' (string vazia) para gerar <Signature> ao invés de <ds:Signature>
     sig.computeSignature(xmlEvento, {
-      prefix: 'ds',
+      prefix: '',  // STRING VAZIA = sem prefixos (não usar 'ds')
       location: { reference: "//*[local-name()='evento']", action: 'append' }
     });
     
@@ -433,16 +435,8 @@ export class SefazService {
     
     // Assinar XML (agora sempre obrigatório)
     console.log('[Manifestação] 🔐 Assinando XML do evento com certificado digital...');
-    let xmlEventoAssinado = signXmlEvento(xmlEventoSemAssinatura, privateKey, certificate);
+    const xmlEventoAssinado = signXmlEvento(xmlEventoSemAssinatura, privateKey, certificate);
     console.log('[Manifestação] ✅ Assinatura digital aplicada com sucesso');
-
-    // PASSO 2.5: FORÇA xmlns no detEvento via replace (workaround para garantir que mesmo se template string não funcionar, o xmlns seja adicionado)
-    // CRÍTICO cStat 215 FIX: detEvento DEVE ter xmlns="http://www.portalfiscal.inf.br/nfe" EXPLÍCITO
-    xmlEventoAssinado = xmlEventoAssinado.replace(
-      /<detEvento versao="1\.00">/g,
-      '<detEvento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">'
-    );
-    console.log('[Manifestação] ✅ XMLNS FORÇADO no detEvento via replace (workaround cStat 215)');
 
     // PASSO 3: Extrair tag <evento> COMPLETA (incluindo xmlns) do XML assinado
     // Remove apenas declaração <?xml...?> mas PRESERVA <evento xmlns="...">
@@ -624,6 +618,8 @@ export class SefazService {
     return new Promise(async (resolve, reject) => {
       try {
         const url = new URL(ENDPOINTS_RECEPCAO_EVENTO[empresa.ambiente as "prod" | "hom"]);
+        console.log(`[callRecepcaoEvento] 🌐 Endpoint manifestação (${empresa.ambiente}):`, url.href);
+        console.log('[callRecepcaoEvento] 📋 ENDPOINTS_RECEPCAO_EVENTO:', JSON.stringify(ENDPOINTS_RECEPCAO_EVENTO, null, 2));
 
         let certData;
         try {
@@ -1420,10 +1416,11 @@ export class SefazService {
         throw new Error("Resposta SEFAZ inválida: Body SOAP não encontrado");
       }
       
-      // CORREÇÃO: Busca nfeResultMsg (tag correta conforme NT 2020.001)
+      // CORREÇÃO: Busca nfeResultMsg (tag varia entre SVRS e Ambiente Nacional)
       const nfeResultMsg = 
         body["nfeResultMsg"] || 
         body["nfeRecepcaoEventoResult"] || 
+        body["nfeRecepcaoEventoNFResult"] ||  // Ambiente Nacional usa "NF" maiúsculo
         body["nfe:nfeResultMsg"];
       
       if (!nfeResultMsg) {

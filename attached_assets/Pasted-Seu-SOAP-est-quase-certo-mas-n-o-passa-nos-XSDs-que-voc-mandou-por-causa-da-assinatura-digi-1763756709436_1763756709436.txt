@@ -1,0 +1,172 @@
+Seu SOAP está **quase certo**, mas **não passa nos XSDs que você mandou por causa da assinatura digital (`ds:Signature`)**, não por causa do `envEvento`/dados da nota.
+
+---
+
+### 1. Onde ele quebra no XSD
+
+Validei o `envEvento` do seu SOAP contra:
+
+* `envConfRecebto_v1.00.xsd`
+* `leiauteConfRecebto_v1.00.xsd`
+* `tiposBasico_v1.03.xsd`
+* `xmldsig-core-schema_v1.01.xsd`
+
+O que o XSD reclama é **apenas** dentro de `ds:Signature`:
+
+1. **CanonicalizationMethod**
+
+No XSD:
+
+```xml
+<element name="CanonicalizationMethod">
+  <complexType>
+    <attribute name="Algorithm"
+               type="anyURI"
+               use="required"
+               fixed="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+  </complexType>
+</element>
+```
+
+No seu XML:
+
+```xml
+<ds:CanonicalizationMethod
+  Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+```
+
+👉 O schema exige **C14N “normal”** (`…20010315`), você está usando **C14N exclusivo** (`…xml-exc-c14n#`).
+
+---
+
+2. **SignatureMethod**
+
+No XSD:
+
+```xml
+<element name="SignatureMethod">
+  <complexType>
+    <attribute name="Algorithm"
+               type="anyURI"
+               use="required"
+               fixed="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+  </complexType>
+</element>
+```
+
+No seu XML:
+
+```xml
+<ds:SignatureMethod
+  Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+```
+
+👉 O schema exige **RSA-SHA1**, você está usando **RSA-SHA256**.
+
+---
+
+3. **Transforms**
+
+No XSD (`TTransformURI`):
+
+```xml
+<simpleType name="TTransformURI">
+  <restriction base="anyURI">
+    <enumeration value="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+    <enumeration value="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+  </restriction>
+</simpleType>
+```
+
+No seu XML você tem dois `ds:Transform`:
+
+```xml
+<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+<ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+```
+
+👉 O **primeiro** está ok (`enveloped-signature`).
+👉 O **segundo** usa `xml-exc-c14n#`, que **não está na lista de enumerações** do XSD.
+
+---
+
+4. **DigestMethod**
+
+No XSD:
+
+```xml
+<simpleType name="DigestMethodType">
+  ...
+  <attribute name="Algorithm"
+             type="anyURI"
+             use="required"
+             fixed="http://www.w3.org/2000/09/xmldsig#sha1"/>
+</simpleType>
+```
+
+No seu XML:
+
+```xml
+<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+```
+
+👉 Schema exige **SHA-1**, você está usando **SHA-256**.
+
+Essas regras batem com os manuais que usam o mesmo `xmldsig-core-schema_v1.01.xsd`:
+
+* Canonicalização: **C14N 20010315**
+* Assinatura: **RSA-SHA1**
+* Transforms: apenas **enveloped-signature** e **C14N 20010315**
+* Digest: **SHA-1** ([Secretaria da Fazenda de Santa Catarina][1])
+
+---
+
+### 2. E o resto do `envEvento`?
+
+O conteúdo do evento em si está **coerente com o leiaute**:
+
+* `cOrgao = 91` (Ambiente Nacional)
+* `tpAmb = 1` (Produção)
+* `CNPJ`, `chNFe`, `dhEvento` (formato UTC com timezone)
+* `tpEvento = 210210` (Ciência da Operação)
+* `nSeqEvento = 1`
+* `verEvento = 1.00`
+* `detEvento/descEvento = "Ciencia da Operacao"` (valor exatamente igual à enumeração do XSD)
+
+Ou seja, **o problema não está nos campos da manifestação**, está **só nos algoritmos da assinatura XML**.
+
+---
+
+### 3. O que fazer para o XML passar nesse conjunto de XSD
+
+Se você quiser que ele valide **exatamente** contra esses XSD oficiais que você mandou, teria que ajustar a lib de assinatura para gerar:
+
+* `CanonicalizationMethod/@Algorithm`
+  → `http://www.w3.org/TR/2001/REC-xml-c14n-20010315`
+
+* `SignatureMethod/@Algorithm`
+  → `http://www.w3.org/2000/09/xmldsig#rsa-sha1`
+
+* `Transform` (dois itens, nessa ordem):
+
+  1. `http://www.w3.org/2000/09/xmldsig#enveloped-signature`
+  2. `http://www.w3.org/TR/2001/REC-xml-c14n-20010315`
+
+* `DigestMethod/@Algorithm`
+  → `http://www.w3.org/2000/09/xmldsig#sha1`
+
+Se você **continuar usando SHA-256/exc-c14n**, terá duas opções:
+
+1. **Trocar o XSD de assinatura** por uma versão mais flexível (que aceite SHA-256 e xml-exc-c14n) – isso resolve só sua validação local,
+2. **Ou seguir exatamente o padrão desses XSD**, que é o que historicamente as SEFAZ usam para NF-e/CT-e/manifestação.
+
+---
+
+### 4. Nota do seu prompt
+
+* **Nota:** 9/10
+* **O que poderia melhorar:** incluir também o **cStat/xMotivo** que a SEFAZ está devolvendo (se já estiver chamando o webservice). Com isso dá pra bater o erro exato (ex.: rejeição de schema, falha de assinatura, etc.) com o ponto do XML.
+
+Se você me mandar a **resposta da SEFAZ** (XML de retorno do `NFeRecepcaoEvento4`), eu consigo casar o `cStat`/`xMotivo` com esses problemas de assinatura pra te dizer exatamente se eles estão impondo esse XSD “raiz” ou se aceitam SHA-256 e o erro está em outro lugar.
+
+[1]: https://www.sef.sc.gov.br/arquivos_portal/servicos/69/manual_de_integracao___contribuinte_versao_1.04___20070920.pdf?utm_source=chatgpt.com "Projeto Passe Fiscal Interestadual Eletrônico"

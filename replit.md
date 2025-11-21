@@ -13,6 +13,44 @@ This web application automates the download of XMLs (nfeProc) from SEFAZ, offeri
 
 ## Recent Changes (November 2024)
 
+### 🔧 PENDING: Apply Rate Limiting Migrations in Supabase Production
+**Date**: November 21, 2025  
+**Status**: **⚠️ ACTION REQUIRED - MIGRATIONS NOT YET APPLIED**
+
+**Critical Issue**: 
+- The application is falsely blocking all manifestations with "Rate limit excedido" because the `sefaz_rate_limit` table and RPC functions don't exist
+- This prevents testing of the recent cStat 404 fix (namespace prefix removal)
+
+**Required Actions**:
+1. **Open Supabase Dashboard** → SQL Editor
+2. **Execute `supabase-migration-rate-limit-status.sql`** (creates `sefaz_rate_limit` table + RPC functions)
+3. **Verify execution**: Run `SELECT * FROM sefaz_rate_limit LIMIT 5;` (should return empty table, not error)
+4. **Test manifestation**: System will now properly enforce 20 queries/hour limit instead of blocking everything
+
+**Files to Apply**:
+- `supabase-migration-rate-limit-status.sql` - Main rate limiting infrastructure (REQUIRED)
+- `supabase-migration-rate-limits.sql` - Alternative implementation (optional, for reference)
+
+---
+
+### ✅ XML Digital Signature - Namespace Prefix Fix (cStat 404 FIX)
+**Date**: November 21, 2025  
+**Status**: IMPLEMENTED - Pending Test (blocked by missing migrations above)
+
+**Problem Identified**: 
+- Manifestation requests returning cStat 404 ("Rejeição: Uso de prefixo de namespace nao permitido")
+- Root cause: SEFAZ Ambiente Nacional rejects XML signatures with `ds:` namespace prefixes (`<ds:Signature>`)
+
+**Solution Implemented**:
+1. **Modified `signXmlEvento`** (`server/sefaz-service.ts` lines 77-114):
+   - Changed `sig.computeSignature()` to use `prefix: ''` (empty string) instead of `prefix: 'ds'`
+   - This generates `<Signature>`, `<SignedInfo>`, `<SignatureValue>` **without** `ds:` prefixes
+   - Complies with SEFAZ Ambiente Nacional requirements per web research findings
+
+**Verification**: Cannot test yet due to rate limiting blocking all manifestations. After applying migrations above, expect cStat 135/573 (success) or 422/655 (other validation errors).
+
+---
+
 ### ✅ XML Digital Signature Implementation (cStat 215 FIX)
 **Date**: November 21, 2025  
 **Status**: COMPLETE - Architect Reviewed and Approved
@@ -25,16 +63,14 @@ This web application automates the download of XMLs (nfeProc) from SEFAZ, offeri
 1. **Refactored `buildSOAPEnvelopeManifestacao`** (`server/sefaz-service.ts` lines 420-471):
    - Generates unsigned evento XML structure
    - Signs XML using `signXmlEvento` with RSA-SHA256 and exclusive canonicalization
-   - Extracts signed content with `ds:Signature` block
+   - Extracts signed content with `<Signature>` block (now without ds: prefix)
    - Embeds signed evento into SOAP envelope
 
 2. **Modified `manifestarEvento`** (`server/sefaz-service.ts` lines 1371-1392):
    - Loads PKCS#12 certificate via `loadPKCS12Certificate`
    - Passes privateKey and certificate to `buildSOAPEnvelopeManifestacao` for signing
 
-**Verification**: Architect confirmed implementation is fully compliant with NT 2020.001 specifications, uses correct cryptographic algorithms, and has no security issues.
-
-**Next Step**: Apply migration `supabase-migration-rate-limit-status.sql` in Supabase Production to enable rate limiting and validate fix (expects cStat 135/573 instead of 215).
+**Verification**: Architect confirmed implementation is fully compliant with NT 2020.001 specifications, uses correct cryptographic algorithms (RSA-SHA256), and has no security issues.
 
 ---
 
