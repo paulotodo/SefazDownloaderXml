@@ -1,0 +1,119 @@
+Nota do seu prompt: **9/10**
+Comentário: ficou bem objetivo, você trouxe exatamente o XML que está indo pro WS, o que facilita muito. Se quiser deixar ainda mais redondo, pode sempre colar também o *cStat/xMotivo* da resposta junto do XML (aqui eu já sabia que era 215 pela msg anterior).
+
+Como a nota é ≥ 8, vou executar seu pedido e apontar o que está errado nesse XML.
+
+---
+
+Vou direto ao ponto: **tem, pelo menos, um erro de schema bem claro aqui**.
+
+### 1. `descEvento` está diferente do que o XSD exige
+
+No seu XML:
+
+```xml
+<detEvento versao="1.00">
+  <descEvento>Ciência da Operação</descEvento>
+</detEvento>
+```
+
+Pelos leiautes de Manifestação do Destinatário, o campo **`descEvento` é enumerado**, e os valores são **sem acento**, por exemplo:
+
+* `Ciencia da Operacao`
+* `Confirmacao da Operacao`
+* `Desconhecimento da Operacao`
+* `Operacao nao Realizada`
+
+Ou seja, o valor **precisa ser exatamente**:
+
+```xml
+<descEvento>Ciencia da Operacao</descEvento>
+```
+
+Do jeito que está (`Ciência da Operação` com acentos), o XML **não casa com o XSD** e isso gera exatamente o que você está recebendo:
+
+* `cStat=215`
+* `xMotivo=Rejeicao: Falha no schema XML`
+
+👉 **Primeira correção obrigatória:** trocar o texto de `descEvento` para a forma sem acento, igual à documentação.
+
+---
+
+### 2. Consistência entre `Id` e `nSeqEvento` (recomendado)
+
+Você montou:
+
+```xml
+<infEvento Id="ID2102102925110073365800010255003003033479113364122401">
+  ...
+  <nSeqEvento>1</nSeqEvento>
+```
+
+* O `Id` termina com **`01`**.
+* Mas o `nSeqEvento` está **`1`** (sem zero à esquerda).
+
+Na prática, muita implementação funciona assim mesmo, mas o padrão de exemplo dos manuais costuma usar **os dois alinhados** (por exemplo, `nSeqEvento=1` e `Id` terminando em `...1`, ou `nSeqEvento=01` e `Id` terminando em `...01`).
+
+Não é o erro principal aqui (quem está estourando o schema é o `descEvento`), mas **vale deixar consistente** para não correr risco de outra validação chata mais à frente.
+
+---
+
+### 3. Namespace e estrutura geral
+
+O resto da estrutura está OK para Manifestação com NFeRecepcaoEvento4:
+
+* `envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"`
+* `idLote`
+* `evento versao="1.00"`
+* `infEvento` com `cOrgao`, `tpAmb`, `CNPJ`, `chNFe`, `dhEvento`, `tpEvento`, `nSeqEvento`, `verEvento`, `detEvento`
+* `tpEvento = 210210` (Ciência da Operação)
+* Assinatura XML (`ds:Signature`) logo após o `infEvento`
+
+Esses pontos não parecem estar quebrando o schema.
+
+Se você quiser deixar o SOAP mais parecido com os exemplos de documentação, pode também:
+
+* Usar prefixo no `nfeDadosMsg` (ex.: `<nfer:nfeDadosMsg>` com `xmlns:nfer="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">`),
+* Incluir o cabeçalho SOAP `<nfeCabecMsg>` com `<cUF>` e `<versaoDados>`.
+
+Mas de novo: o **bug que está te dando 215, nesse XML específico, é o `descEvento` com acento**.
+
+---
+
+### Resumindo o que eu mudaria agora
+
+Trocar só essa parte:
+
+```xml
+<detEvento versao="1.00">
+  <descEvento>Ciência da Operação</descEvento>
+</detEvento>
+```
+
+por:
+
+```xml
+<detEvento versao="1.00">
+  <descEvento>Ciencia da Operacao</descEvento>
+</detEvento>
+```
+
+E, de bônus (recomendado, não obrigatório pro schema):
+
+* Deixar `Id` e `nSeqEvento` coerentes, por exemplo:
+
+```xml
+<infEvento Id="ID21021029251100733658000102550030030334791133641224_1">
+  ...
+  <nSeqEvento>1</nSeqEvento>
+```
+
+ou
+
+```xml
+<infEvento Id="ID2102102925110073365800010255003003033479113364122401">
+  ...
+  <nSeqEvento>01</nSeqEvento>
+```
+
+Se depois dessa mudança o 215 continuar aparecendo, me manda o novo `retEnvEvento` e o XML atualizado que eu destrincho o próximo detalhe.

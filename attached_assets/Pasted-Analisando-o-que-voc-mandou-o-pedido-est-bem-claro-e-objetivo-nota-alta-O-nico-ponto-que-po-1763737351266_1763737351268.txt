@@ -1,0 +1,285 @@
+Analisando o que você mandou, o pedido está bem claro e objetivo (nota alta ✨). O único ponto que poderia ajudar ainda mais seria você incluir também a URL do web service que está chamando (SP, SVRS, AN etc.), mas dá pra trabalhar com o que você enviou.
+
+Vou focar em dois pontos do log:
+
+1. **O erro da SEFAZ (cStat 215 – Falha no schema XML)**
+2. **O erro do Supabase (“operator does not exist: uuid = character varying”)**
+
+---
+
+## 1. O que a SEFAZ está dizendo de fato
+
+Da resposta:
+
+```xml
+<retEnvEvento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+  <idLote>1</idLote>
+  <tpAmb>1</tpAmb>
+  <verAplic>SVRS2511071043DR</verAplic>
+  <cStat>215</cStat>
+  <xMotivo>Rejeicao: Falha no schema XML</xMotivo>
+</retEnvEvento>
+```
+
+O seu próprio código depois reclama:
+
+> `[Manifestação] ❌ retEvento/infEvento não encontrado`
+
+Isso é consequência, não causa.
+**A causa real é o `cStat=215`**: o XML do **envEvento/evento** não bate com o schema oficial (`envEvento_v1.00.xsd` + leiaute de manifestação).
+
+Sempre que vem só `retEnvEvento` sem nenhum `<retEvento>`, é isso: a SEFAZ nem conseguiu validar a “área de dados” do evento, então não chega a retornar o detalhe do evento.
+
+---
+
+## 2. Conferindo o seu XML de envio
+
+Trecho principal que interessa:
+
+```xml
+<nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
+  <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+    <idLote>1</idLote>
+    <evento versao="1.00">
+      <infEvento Id="ID2102104325118888702100011155007000978556144583240701">
+        <cOrgao>91</cOrgao>
+        <tpAmb>1</tpAmb>
+        <CNPJ>07082454000440</CNPJ>
+        <chNFe>43251188887021000111550070009785561445832407</chNFe>
+        <dhEvento>2025-11-21T11:15:22-03:00</dhEvento>
+        <tpEvento>210210</tpEvento>
+        <nSeqEvento>1</nSeqEvento>
+        <verEvento>1.00</verEvento>
+        <detEvento versao="1.00">
+          <descEvento>Ciencia da Operacao</descEvento>
+        </detEvento>
+      </infEvento>
+      <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        ...
+      </ds:Signature>
+    </evento>
+  </envEvento>
+</nfeDadosMsg>
+```
+
+Comparando com exemplos oficiais e de comunidade (ACBr, Contábeis etc.), a **estrutura está quase perfeita**:
+
+* `envEvento` versao="1.00", namespace correto
+* `idLote` ok
+* `evento` versao="1.00"
+* `infEvento` com `Id=ID + tpEvento(6) + chave(44) + nSeqEvento(2)` = 54 chars (como você logou)
+* Ordem dos campos dentro de `infEvento` correta
+* `detEvento` com `descEvento = Ciencia da Operacao` (valor permitido pelo XSD)
+* `Signature` dentro de `<evento>`, após `<infEvento>` (posição correta para o schema)
+
+Ou seja: **não tem um erro gritante de tag/falta de campo**.
+
+Então por que 215?
+
+---
+
+## 3. Pontos suspeitos / onde eu olharia primeiro
+
+### (a) Elemento assinado e forma de assinatura
+
+No fórum Contábeis, quem estava tomando 225/215 em manifestação resolveu o problema **ajustando a forma de assinar o XML**:
+
+1. Assinar **somente o `<evento>`** (mais especificamente o `<infEvento>` com `Id="ID..."`),
+2. **Sem** `<envEvento>` e `<idLote>` presentes no momento da assinatura,
+3. Depois de assinar, “embrulhar” o `<evento>` dentro do `<envEvento>` com `<idLote>`.
+
+Pelo seu log:
+
+```text
+[Manifestação] 🔐 Assinando XML do evento com certificado digital...
+[signXmlEvento] 🔍 PrivateKey recebida: SIM
+[signXmlEvento] 🔍 Certificate recebido: SIM
+[Manifestação] ✅ Assinatura digital aplicada com sucesso
+```
+
+E olhando o XML:
+
+```xml
+<ds:Reference URI="#ID2102104325...0701">
+```
+
+Tudo indica que você está fazendo o **caminho correto** (assinando `infEvento`). Porém:
+
+* Se a sua função de assinatura estiver inserindo algum atributo extra no lugar errado (por ex. `Id` em `<evento>` ou `<envEvento>`),
+* Ou se ela estiver “suja” com algum namespace estranho,
+
+isso **quebra o schema** e resulta justamente em 215.
+
+💡 **O que eu faria aqui**:
+Gerar o XML **sem assinatura**, salvar em arquivo, e validar esse arquivo contra o XSD `envEvento_v1.00.xsd` no “validador da receita” ou qualquer validador XSD (até um plugin de IDE). Se sem assinatura passar, e com assinatura der erro, o problema está 100% na forma como o XML está sendo assinado/injetado.
+
+---
+
+### (b) Namespace do `nfeDadosMsg` / SOAP
+
+Seu SOAP hoje:
+
+```xml
+<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                 xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+  <soap12:Body>
+    <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
+      ...
+    </nfeDadosMsg>
+  </soap12:Body>
+</soap12:Envelope>
+```
+
+Exemplos de manifesto na SEFAZ-AN e em libs (ACBr, etc.) costumam usar algo assim:
+
+```xml
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:nfer="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
+  <soapenv:Body>
+    <nfer:nfeDadosMsg>
+      <envEvento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+        ...
+      </envEvento>
+    </nfer:nfeDadosMsg>
+  </soapenv:Body>
+</soapenv:Envelope>
+```
+
+Tecnicamente, usar o namespace como **default** (`xmlns="..."`) ou com prefixo (`nfer:`) é equivalente — o que importa é `{namespace, localName}`.
+Mas:
+
+* Alguns webservices mais antigos/.NET são meio “frescos” com SOAP e às vezes dão erro bizarro.
+* Se o WSDL foi gerado para `nfer:nfeDadosMsg` e alguma camada interna está mapeando pelo nome qualificado, pode haver comportamento estranho (embora o mais comum aí seria SOAP Fault, não `cStat 215`).
+
+Ainda assim, como é uma mudança simples, **vale testar**:
+
+* Trocar para `xmlns:nfer="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4"`
+* Usar `<nfer:nfeDadosMsg>` em vez de `nfeDadosMsg` sem prefixo.
+
+---
+
+### (c) `nSeqEvento` x `Id` do evento
+
+No log:
+
+```text
+[DEBUG ID] nSeqEvento: 01 (2 chars)
+[DEBUG ID] idEvento: ID2102104325118888702100011155007000978556144583240701 (54 chars)
+```
+
+Mas no XML:
+
+```xml
+<nSeqEvento>1</nSeqEvento>
+```
+
+Ou seja:
+
+* `Id` termina com **01**
+* `nSeqEvento` está como **1**
+
+Pelo XSD, `Id` é só um `pattern` de 54 caracteres, e `nSeqEvento` é numérico de 1–2 dígitos, então **isso não deveria dar erro de schema** por si só.
+Mas as regras de negócio dizem que **as últimas duas posições do `Id` devem bater com o `nSeqEvento` zero-left**. Algumas implementações colocam isso direto no XSD específico de evento.
+
+Como isso é fácil de alinhar, eu ajustaria para manter tudo consistente:
+
+* Ou você passa `<nSeqEvento>01</nSeqEvento>`
+* Ou muda a montagem do `Id` para terminar em `...1` (sem zero à esquerda).
+
+Se eles tiverem enfiado essa consistência no XSD, isso por si só pode explicar o 215.
+
+---
+
+### (d) Endpoint / órgão x verAplic
+
+Na sua resposta:
+
+```xml
+<verAplic>SVRS2511071043DR</verAplic>
+```
+
+Isso mostra que o serviço que respondeu é o **SVRS** (Sefaz Virtual do RS), não a SEFAZ-AN (`AN_...`), diferente deste exemplo de manifestação na AN:
+
+```xml
+<verAplic>AN_1.6.4</verAplic>
+<cOrgao>91</cOrgao>
+```
+
+Para manifestação de destinatário, a documentação indica uso do código de órgão `91` (Ambiente Nacional) em `cOrgao`. Você está usando `cOrgao=91`, mas aparentemente batendo direto no SVRS.
+
+Isso **não é necessariamente errado** (há UFs que redirecionam para serviços virtuais), mas é mais um ponto que eu validaria:
+
+* Garantir que a URL do WS é a prevista para a UF/ambiente que você quer (ex.: em SP produção é `https://nfe.fazenda.sp.gov.br/ws/nferecepcaoevento4.asmx`).
+* Se você estiver chamando SVRS diretamente, ver se a documentação dele pede algo diferente para `cOrgao` ou estrutura.
+
+Mas, de novo, se o problema fosse só `cOrgao`/UF, eu esperaria outro código de rejeição mais específico, não 215.
+
+---
+
+## 4. Erro do Supabase (separado da SEFAZ)
+
+Do log:
+
+```text
+[SupabaseStorage] Erro ao verificar rate limit: operator does not exist: uuid = character varying
+```
+
+Isso é totalmente **independente da manifestação**.
+Significa:
+
+* Em alguma query do Supabase você está comparando uma coluna `uuid` com uma string (`varchar`) sem cast.
+* Exemplo típico em SQL:
+
+  ```sql
+  WHERE user_id = 'algum-texto'
+  ```
+
+  sendo `user_id` do tipo `uuid`.
+
+👉 Ajuste a query para:
+
+```sql
+WHERE user_id = 'algum-texto'::uuid
+```
+
+ou mude o tipo da coluna para `text`/`varchar` se não quiser uuid.
+
+Esse erro *não* está bloqueando o envio para a SEFAZ (tanto que o SOAP é montado e enviado), mas pode afetar sua lógica de rate limit.
+
+---
+
+## 5. Caminho prático para achar o erro exato
+
+Se fosse eu depurando isso, faria assim:
+
+1. **Gerar o XML do `envEvento` sem assinatura**
+
+   * Só `<envEvento>…</envEvento>`.
+   * Validar contra o XSD `envEvento_v1.00.xsd` (validador da própria Receita ou qualquer validador XSD).
+   * Se der erro aí, o problema é estrutura (tag errada, namespace, ordem, etc.).
+
+2. **Validar o `evento` assinado isoladamente**
+
+   * Montar o `<evento>` com `<infEvento>` + `<Signature>`.
+   * Validar contra o XSD de evento de manifestação (leiaute da NT 2012.002).
+
+3. **Conferir consistência `Id` × `nSeqEvento`**
+
+   * Deixar os dois coerentes (`01`/`01` ou `1`/`1`).
+
+4. **Ajustar o SOAP para o formato “mais padrão”**
+
+   * `xmlns:nfer="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4"`
+   * `<nfer:nfeDadosMsg>` dentro do `<soap12:Body>`.
+
+5. **Verificar URL e ambiente**
+
+   * Confirmar que está usando o endpoint correto para a UF e o ambiente (homologação/produção).
+
+Se você quiser, no próximo passo você pode colar:
+
+* O XML **completo** de `<envEvento>` (sem log truncado),
+* E o trecho de código que realmente monta e assina o XML,
+
+que eu consigo apontar com mais precisão *onde* o schema provavelmente está quebrando.

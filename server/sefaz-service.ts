@@ -405,6 +405,7 @@ export class SefazService {
     const xJustXML = justificativa ? `<xJust>${justificativa}</xJust>` : '';
 
     // PASSO 1: Montar XML do evento (sem assinatura)
+    // IMPORTANTE: nSeqEvento no elemento é "1", mas no Id é "01" (com padStart)
     const xmlEventoSemAssinatura = `<?xml version="1.0" encoding="utf-8"?>
 <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
   <infEvento Id="${idEvento}">
@@ -432,16 +433,17 @@ export class SefazService {
     const xmlEventoAssinado = signXmlEvento(xmlEventoSemAssinatura, privateKey, certificate);
     console.log('[Manifestação] ✅ Assinatura digital aplicada com sucesso');
 
-    // PASSO 3: Extrair apenas o conteúdo interno de <evento> (sem declaração XML)
-    // Remove <?xml...?> e tags <evento>...</evento> externas
-    const eventoMatch = xmlEventoAssinado.match(/<evento[^>]*>([\s\S]*)<\/evento>/);
-    if (!eventoMatch) {
+    // PASSO 3: Extrair tag <evento> COMPLETA (incluindo xmlns) do XML assinado
+    // Remove apenas declaração <?xml...?> mas PRESERVA <evento xmlns="...">
+    // CORREÇÃO cStat 215: NT 2020.001 §6.3.1 exige xmlns em <evento>
+    const eventoCompletoMatch = xmlEventoAssinado.match(/<evento[\s\S]*<\/evento>/);
+    if (!eventoCompletoMatch) {
       throw new Error('Erro ao processar XML assinado: tag <evento> não encontrada');
     }
-    const eventoConteudo = eventoMatch[1];
+    const eventoCompleto = eventoCompletoMatch[0];
 
-    // PASSO 4: Embutir evento assinado no SOAP envelope
-    // CORREÇÃO cStat 215: Adicionar xmlns explicitamente no <evento> (xml-crypto remove namespace ao serializar)
+    // PASSO 4: Embutir evento assinado COMPLETO no SOAP envelope
+    // Preserva namespace xmlns="http://www.portalfiscal.inf.br/nfe" do <evento>
     return `<?xml version="1.0" encoding="utf-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
@@ -450,7 +452,7 @@ export class SefazService {
     <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
       <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
         <idLote>1</idLote>
-        <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">${eventoConteudo}</evento>
+        ${eventoCompleto}
       </envEvento>
     </nfeDadosMsg>
   </soap12:Body>
@@ -1200,17 +1202,17 @@ export class SefazService {
 
   /**
    * Retorna descrição oficial do tipo de evento
-   * NT 2020.001 Tabela 3.1: Descrições COM ACENTOS conforme XSD oficial
-   * CRÍTICO: SEFAZ valida descEvento contra schema (xs:enumeration) - strings EXATAS obrigatórias
+   * CORREÇÃO CRÍTICA: Exemplos oficiais usam SEM ACENTOS mesmo que NT 2020.001 Tabela 3.1 mostre com acentos
+   * Causa raiz cStat 215: Schema XSD valida contra strings EXATAS sem acentuação
    */
   private getTipoEventoDescricao(tpEvento: string): string {
     const tipos: Record<string, string> = {
-      "110110": "Carta de Correção",
+      "110110": "Carta de Correcao",
       "110111": "Cancelamento",
-      "210200": "Confirmação da Operação",
-      "210210": "Ciência da Operação",
-      "210220": "Desconhecimento da Operação",
-      "210240": "Operação não Realizada",
+      "210200": "Confirmacao da Operacao",
+      "210210": "Ciencia da Operacao",
+      "210220": "Desconhecimento da Operacao",
+      "210240": "Operacao nao Realizada",
     };
     return tipos[tpEvento] || `Evento ${tpEvento}`;
   }
