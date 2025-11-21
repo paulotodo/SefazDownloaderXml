@@ -76,6 +76,9 @@ interface SefazResponse {
  */
 function signXmlEvento(xmlEvento: string, privateKey: string, certificate: string): string {
   try {
+    console.log('[signXmlEvento] 🔍 PrivateKey recebida:', privateKey ? `SIM (${privateKey.substring(0, 50)}...)` : 'NÃO');
+    console.log('[signXmlEvento] 🔍 Certificate recebido:', certificate ? `SIM (${certificate.substring(0, 50)}...)` : 'NÃO');
+    
     // Criar assinatura com xml-crypto v6.x API
     const sig = new SignedXml({
       signatureAlgorithm: 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
@@ -335,9 +338,9 @@ export class SefazService {
     tpEvento: string,
     nSeqEvento: number,
     ambiente: string,
-    justificativa?: string,
-    privateKey?: string,
-    certificate?: string
+    justificativa: string | undefined,
+    privateKey: string,
+    certificate: string
   ): string {
     const tpAmb = ambiente.toLowerCase().startsWith("prod") ? "1" : "2";
     
@@ -433,15 +436,14 @@ export class SefazService {
 </evento>`;
 
     // PASSO 2: Assinar XML do evento (conforme NT 2020.001 P91)
-    let xmlEventoAssinado: string;
-    if (privateKey && certificate) {
-      console.log('[Manifestação] 🔐 Assinando XML do evento com certificado digital...');
-      xmlEventoAssinado = signXmlEvento(xmlEventoSemAssinatura, privateKey, certificate);
-      console.log('[Manifestação] ✅ Assinatura digital aplicada com sucesso');
-    } else {
-      console.warn('[Manifestação] ⚠️ AVISO: Certificado não fornecido - XML NÃO será assinado (SEFAZ rejeitará!)');
-      xmlEventoAssinado = xmlEventoSemAssinatura;
-    }
+    console.log('[buildSOAPEnvelopeManifestacao] 🔍 Verificando parâmetros de assinatura...');
+    console.log('[buildSOAPEnvelopeManifestacao] privateKey recebida:', privateKey ? `SIM (${privateKey.substring(0, 50)}...)` : 'NÃO');
+    console.log('[buildSOAPEnvelopeManifestacao] certificate recebido:', certificate ? `SIM (${certificate.substring(0, 50)}...)` : 'NÃO');
+    
+    // Assinar XML (agora sempre obrigatório)
+    console.log('[Manifestação] 🔐 Assinando XML do evento com certificado digital...');
+    const xmlEventoAssinado = signXmlEvento(xmlEventoSemAssinatura, privateKey, certificate);
+    console.log('[Manifestação] ✅ Assinatura digital aplicada com sucesso');
 
     // PASSO 3: Extrair apenas o conteúdo interno de <evento> (sem declaração XML)
     // Remove <?xml...?> e tags <evento>...</evento> externas
@@ -1372,6 +1374,9 @@ export class SefazService {
           empresa.certificadoPath,
           empresa.certificadoSenha
         );
+        console.log('[Manifestação] ✅ Certificado carregado com sucesso');
+        console.log('[Manifestação] 🔑 PrivateKey presente:', certData.key ? 'SIM' : 'NÃO');
+        console.log('[Manifestação] 📜 Certificate presente:', certData.cert ? 'SIM' : 'NÃO');
       } catch (error: any) {
         throw new Error(`Falha ao carregar certificado para manifestação: ${error.message}`);
       }
