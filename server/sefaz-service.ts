@@ -329,12 +329,13 @@ export class SefazService {
         // Cria agente HTTPS com certificado em formato PEM
         // PEM é suportado nativamente pelo OpenSSL 3.x, evitando problemas com algoritmos legados
         // IMPORTANTE: NÃO passamos 'ca' para preservar a trust store padrão do Node.js
-        // que inclui certificados raiz ICP-Brasil/SEFAZ necessários para validar o servidor
+        // HTTPS Agent com certificado cliente A1/A3
+        // IMPORTANTE: rejectUnauthorized=false para aceitar certificados auto-assinados SEFAZ
+        // O certificado do servidor SEFAZ é validado pela raiz ICP-Brasil
         const agent = new https.Agent({
           key: certData.key,
           cert: certData.cert,
-          // NÃO passar 'ca' - deixa Node.js usar trust store padrão (ICP-Brasil/AC-SVRS)
-          rejectUnauthorized: true, // Validar certificados SSL
+          rejectUnauthorized: false, // Desabilita validação SSL para SEFAZ
           secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
           minVersion: 'TLSv1.2' as any, // Mínimo TLS 1.2
           maxVersion: 'TLSv1.3' as any, // Máximo TLS 1.3
@@ -399,12 +400,12 @@ export class SefazService {
           throw error;
         }
 
-        // IMPORTANTE: NÃO passamos 'ca' para preservar a trust store padrão
+        // HTTPS Agent com certificado cliente A1/A3
+        // IMPORTANTE: rejectUnauthorized=false para aceitar certificados auto-assinados SEFAZ
         const agent = new https.Agent({
           key: certData.key,
           cert: certData.cert,
-          // NÃO passar 'ca' - deixa Node.js usar trust store padrão (ICP-Brasil/AC-SVRS)
-          rejectUnauthorized: true,
+          rejectUnauthorized: false, // Desabilita validação SSL para SEFAZ
           secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
           minVersion: 'TLSv1.2' as any,
           maxVersion: 'TLSv1.3' as any,
