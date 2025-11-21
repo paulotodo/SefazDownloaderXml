@@ -971,7 +971,7 @@ export class SupabaseStorage implements IStorage {
   async resetRateLimit(empresaId: string): Promise<void> {
     try {
       const { error } = await supabaseAdmin
-        .from("rate_limit_control")
+        .from("sefaz_rate_limit")
         .delete()
         .eq("empresa_id", empresaId);
 
