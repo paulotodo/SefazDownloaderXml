@@ -93,6 +93,9 @@ WHERE erro_download LIKE '%Rate limit%'
 -- 4. FUNÇÃO AUXILIAR: RESET RATE LIMIT
 -- ========================================
 
+-- Remove função existente se houver (para evitar conflitos de assinatura)
+DROP FUNCTION IF EXISTS reset_rate_limit_if_expired CASCADE;
+
 -- Função para resetar contador quando janela de 1h expirou
 CREATE OR REPLACE FUNCTION reset_rate_limit_if_expired(
   p_user_id UUID,
@@ -140,6 +143,9 @@ COMMENT ON FUNCTION reset_rate_limit_if_expired IS 'Reseta contador se janela de
 -- ========================================
 -- 5. FUNÇÃO: INCREMENTAR E VERIFICAR LIMITE
 -- ========================================
+
+-- Remove função existente se houver (para evitar conflitos de assinatura)
+DROP FUNCTION IF EXISTS increment_and_check_rate_limit CASCADE;
 
 CREATE OR REPLACE FUNCTION increment_and_check_rate_limit(
   p_user_id UUID,
