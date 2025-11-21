@@ -80,8 +80,12 @@ function signXmlEvento(xmlEvento: string, privateKey: string, certificate: strin
     console.log('[signXmlEvento] 🔍 Certificate recebido:', certificate ? `SIM (${certificate.substring(0, 50)}...)` : 'NÃO');
     
     // Criar assinatura com xml-crypto v6.x API
+    // Conforme documentação oficial: privateKey pode ser string PEM ou Buffer
     const sig = new SignedXml({
-      signatureAlgorithm: 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
+      privateKey: privateKey,  // String PEM diretamente conforme docs
+      publicCert: certificate,  // Será incluído em <KeyInfo><X509Certificate>
+      signatureAlgorithm: 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256',
+      canonicalizationAlgorithm: 'http://www.w3.org/2001/10/xml-exc-c14n#'
     });
     
     // Adicionar referência ao elemento infEvento (que possui atributo Id)
@@ -94,25 +98,8 @@ function signXmlEvento(xmlEvento: string, privateKey: string, certificate: strin
       digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256'
     });
     
-    // Configurar chave privada (após addReference conforme documentação)
-    (sig as any).signingKey = privateKey;
-    
-    // Configurar algoritmo de canonicalização
-    (sig as any).canonicalizationAlgorithm = 'http://www.w3.org/2001/10/xml-exc-c14n#';
-    
-    // Adicionar certificado X509 no KeyInfo
-    (sig as any).keyInfoProvider = {
-      getKeyInfo: function() {
-        const cleanCert = certificate
-          .replace(/-----BEGIN CERTIFICATE-----/g, '')
-          .replace(/-----END CERTIFICATE-----/g, '')
-          .replace(/\s/g, '');
-        
-        return `<X509Data><X509Certificate>${cleanCert}</X509Certificate></X509Data>`;
-      }
-    };
-    
     // Computar assinatura e inserir no final de <evento>
+    // publicCert já configura automaticamente <KeyInfo><X509Certificate>
     sig.computeSignature(xmlEvento, {
       prefix: 'ds',
       location: { reference: "//*[local-name()='evento']", action: 'append' }

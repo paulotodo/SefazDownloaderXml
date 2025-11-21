@@ -99,7 +99,7 @@ DROP FUNCTION IF EXISTS reset_rate_limit_if_expired CASCADE;
 -- Função para resetar contador quando janela de 1h expirou
 CREATE OR REPLACE FUNCTION reset_rate_limit_if_expired(
   p_user_id UUID,
-  p_empresa_id VARCHAR,
+  p_empresa_id UUID,
   p_tipo_operacao VARCHAR
 ) RETURNS BOOLEAN AS $$
 DECLARE
@@ -149,7 +149,7 @@ DROP FUNCTION IF EXISTS increment_and_check_rate_limit CASCADE;
 
 CREATE OR REPLACE FUNCTION increment_and_check_rate_limit(
   p_user_id UUID,
-  p_empresa_id VARCHAR,
+  p_empresa_id UUID,
   p_tipo_operacao VARCHAR,
   p_limite INTEGER DEFAULT 20
 ) RETURNS BOOLEAN AS $$
