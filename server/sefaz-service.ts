@@ -417,8 +417,9 @@ export class SefazService {
           path: url.pathname,
           method: "POST",
           headers: {
-            "Content-Type": "application/soap+xml; charset=utf-8",
+            "Content-Type": "application/soap+xml; charset=utf-8; action=\"http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4/nfeRecepcaoEvento\"",
             "Content-Length": Buffer.byteLength(envelope),
+            "SOAPAction": "http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4/nfeRecepcaoEvento",
           },
           agent,
         };
