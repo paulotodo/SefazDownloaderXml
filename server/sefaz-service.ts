@@ -418,7 +418,7 @@ export class SefazService {
             <tpEvento>${tpEvento}</tpEvento>
             <nSeqEvento>${nSeqEvento}</nSeqEvento>
             <verEvento>1.00</verEvento>
-            <detEvento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+            <detEvento versao="1.00">
               <descEvento>${descEvento}</descEvento>${xJustXML}
             </detEvento>
           </infEvento>

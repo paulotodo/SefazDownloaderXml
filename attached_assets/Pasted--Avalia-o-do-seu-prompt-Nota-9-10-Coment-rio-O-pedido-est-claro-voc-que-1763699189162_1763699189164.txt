@@ -1,0 +1,147 @@
+✅ **Avaliação do seu prompt**
+
+* **Nota:** 9 / 10
+* **Comentário:** O pedido está claro: você quer *um exemplo de SOAP XML para Manifestação do Destinatário*, baseado na documentação oficial da Fazenda. Poderia ficar ainda mais preciso se você especificasse:
+
+  * tipo de manifestação (Confirmação, Ciência, Desconhecimento, Operação não Realizada);
+  * UF/ambiente (SP, AN, homologação/produção);
+  * versão da NF-e (4.00).
+
+Como a nota é **≥ 8**, vou **executar o pedido** e já te entregar o exemplo.
+
+---
+
+## Contexto rápido (NF-e 4.0 / Manifestação)
+
+De acordo com a **Nota Técnica 2020.001**, o evento de Manifestação do Destinatário continua sendo enviado pelo **web service de eventos (RecepcaoEvento / NFeRecepcaoEvento4)**, usando o layout `envEvento`/`retEnvEvento` na versão 1.00. ([nfe.fazenda.gov.br][1])
+
+O **web service de eventos 4.00** é publicado como `NFeRecepcaoEvento4` pelas SEFAZ estaduais e pelo Ambiente Nacional. ([nfe.fazenda.gov.br][2])
+
+O layout de `envEvento` segue o MOC:
+
+* raiz `envEvento` (atributo `versao`),
+* `idLote`,
+* 1 a 20 nós `evento`,
+* dentro de `evento`: `infEvento` com `cOrgao`, `tpAmb`, `CNPJ/CPF`, `chNFe`, `dhEvento`, `tpEvento`, `nSeqEvento`, `verEvento`,
+* e o `detEvento` com `descEvento` e, em alguns tipos, `xJust`. ([Secretaria da Fazenda de São Paulo][3])
+
+Os **tipos de evento** de Manifestação são (tpEvento): ([Avalara][4])
+
+* `210200` – Confirmação da Operação
+* `210210` – Ciência da Operação
+* `210220` – Desconhecimento da Operação
+* `210240` – Operação não Realizada
+
+Abaixo vou te dar um **exemplo completo de SOAP 1.2** para **Confirmação da Operação** (`tpEvento = 210200`) usando `NFeRecepcaoEvento4`.
+
+---
+
+## Exemplo de SOAP XML – Manifestação do Destinatário (Confirmação da Operação)
+
+> 🔧 Exemplo pensado para **NF-e 4.00**, **Ambiente Nacional / SEFAZ padrão**, usando `NFeRecepcaoEvento4`.
+> Ajuste **CNPJ**, **chNFe**, **cUF**, **cOrgao**, **datas** e **URLs** conforme o seu ambiente.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<soap12:Envelope
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+
+  <!-- Cabeçalho SOAP -->
+  <soap12:Header>
+    <nfeCabecMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
+      <!-- Código da UF ou 91/90 (AN), conforme tabela do MOC -->
+      <cUF>35</cUF>              <!-- 35 = SP, exemplo -->
+      <!-- Versão do XML de dados do evento (envEvento/retEnvEvento) -->
+      <versaoDados>1.00</versaoDados>
+    </nfeCabecMsg>
+  </soap12:Header>
+
+  <!-- Corpo SOAP -->
+  <soap12:Body>
+    <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
+
+      <!-- XML de Manifestação do Destinatário -->
+      <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+        <!-- Identificador do lote (controle seu) -->
+        <idLote>1</idLote>
+
+        <!-- Um lote pode ter até 20 eventos -->
+        <evento versao="1.00">
+          <infEvento Id="ID21020035240123456789000123550010000000011000000011">
+            <!-- Órgão que vai processar o evento:
+                 91/90 (Ambiente Nacional) ou código da UF -->
+            <cOrgao>91</cOrgao>
+
+            <!-- Ambiente: 1=Produção, 2=Homologação -->
+            <tpAmb>2</tpAmb>
+
+            <!-- CNPJ ou CPF do destinatário -->
+            <CNPJ>12345678000123</CNPJ>
+
+            <!-- Chave completa da NF-e a ser manifestada -->
+            <chNFe>35240123456789000123550010000000011000000011</chNFe>
+
+            <!-- Data/hora do evento em UTC-3 (exemplo) com timezone -->
+            <dhEvento>2025-11-21T13:45:00-03:00</dhEvento>
+
+            <!-- Tipo de evento:
+                 210200 = Confirmação da Operação -->
+            <tpEvento>210200</tpEvento>
+
+            <!-- Número sequencial do evento para essa NF-e -->
+            <nSeqEvento>1</nSeqEvento>
+
+            <!-- Versão específica do evento -->
+            <verEvento>1.00</verEvento>
+
+            <!-- Detalhe do evento de manifestação -->
+            <detEvento versao="1.00">
+              <descEvento>Confirmacao da Operacao</descEvento>
+              <!-- xJust é obrigatório apenas em alguns tipos de evento,
+                   para Confirmação normalmente não se usa -->
+            </detEvento>
+          </infEvento>
+
+          <!-- IMPORTANTE: aqui, no XML real enviado, o nó "evento"
+               (infEvento) precisa estar assinado digitalmente com
+               o certificado do destinatário. -->
+        </evento>
+
+      </envEvento>
+    </nfeDadosMsg>
+  </soap12:Body>
+</soap12:Envelope>
+```
+
+Esse modelo está alinhado ao padrão descrito no **MOC** e nas notas técnicas mais recentes que padronizam o web service **NFeRecepcaoEvento4** para versão 4.00 da NF-e. ([nfe.fazenda.gov.br][2])
+
+---
+
+## Campos que você normalmente vai parametrizar
+
+Resumo do que você deve trocar dinamicamente no seu sistema:
+
+* `cUF` no header: UF que está recebendo o evento (ou conforme tabela/AN). ([nfe.fazenda.gov.br][2])
+* `versaoDados`: hoje, para Manifestação, segue `1.00` (ver Nota Técnica 2020.001). ([nfe.fazenda.gov.br][1])
+* `cOrgao`: código do órgão (UF ou 91/90 para Ambiente Nacional). ([nfe.fazenda.gov.br][1])
+* `tpAmb`: 1 (produção) ou 2 (homologação). ([Secretaria da Fazenda de São Paulo][3])
+* `CNPJ`/`CPF`: documento do destinatário. ([moc.sped.fazenda.pr.gov.br][5])
+* `chNFe`: chave da NF-e que você está manifestando. ([nfe.fazenda.gov.br][1])
+* `dhEvento`: data/hora do evento no formato UTC com timezone (`AAAA-MM-DDThh:mm:ss-03:00`). ([nfe.fazenda.gov.br][1])
+* `tpEvento`: tipo de manifestação (210200, 210210, 210220, 210240). ([Avalara][4])
+* `nSeqEvento`: sequência do evento para aquela NF-e (normalmente 1).
+* Assinatura XML: o nó `<infEvento>` deve ser **assinado** com o certificado A1/A3 do destinatário, seguindo o padrão XMLDSig do MOC. ([grupoforcamaxima.com.br][6])
+
+Se você quiser, no próximo passo posso:
+
+* adaptar esse exemplo exatamente para **NF-e x UF x ambiente** que você está usando;
+* gerar também o **XML de retorno esperado (`retEnvEvento` / `retEvento`)** para facilitar o parse no seu código.
+
+[1]: https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=vuPAbOafoX4%3D&utm_source=chatgpt.com "Nota Técnica 2020.001 Evento de manifestação do destinatário"
+[2]: https://www.nfe.fazenda.gov.br/portal/webServices.aspx?tipoConteudo=OUC%2FYVNWZfo%3D&utm_source=chatgpt.com "Serviços WEB NFE (Sefaz) - Portal da Nota Fiscal Eletrônica"
+[3]: https://portal.fazenda.sp.gov.br/servicos/nfce/Downloads/Manual_de_Orientacao_Contribuinte_v_6.pdf?utm_source=chatgpt.com "Nota Fiscal Eletrônica"
+[4]: https://oobj.com.br/bc/quais-sao-eventos-manifestacao-destinatario/?utm_source=chatgpt.com "Quais são os Eventos de Manifestação Destinatário? - Oobj"
+[5]: https://moc.sped.fazenda.pr.gov.br/RecepcaoEventoManifestacao.html?utm_source=chatgpt.com "NFeRecepcaoEvento – Manifestação do Destinatário"
+[6]: https://grupoforcamaxima.com.br/webservicerps/docs/manuais/Manual%20de%20Eventos%20NFe%20draft.pdf?utm_source=chatgpt.com "Projeto Nota Fiscal Eletrônica"
