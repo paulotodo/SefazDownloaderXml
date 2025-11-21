@@ -414,11 +414,44 @@ export class SefazService {
     // Conforme NT 2020.001, detEvento precisa estar dentro de infEvento
     const xJustXML = justificativa ? `<xJust>${justificativa}</xJust>` : '';
 
-    // CORREÇÃO CRÍTICA NT 2020.001:
-    // - envEvento só pode conter: idLote + evento(s)
-    // - tpAmb, verAplic, cOrgao aparecem apenas na resposta (retEnvEvento)
-    // - No envio, esses campos devem estar SOMENTE dentro de infEvento
+    // PASSO 1: Montar XML do evento (sem assinatura)
+    const xmlEventoSemAssinatura = `<?xml version="1.0" encoding="utf-8"?>
+<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+  <infEvento Id="${idEvento}">
+    <cOrgao>91</cOrgao>
+    <tpAmb>${tpAmb}</tpAmb>
+    <CNPJ>${cnpj}</CNPJ>
+    <chNFe>${chaveNFe}</chNFe>
+    <dhEvento>${dhEvento}</dhEvento>
+    <tpEvento>${tpEvento}</tpEvento>
+    <nSeqEvento>${nSeqEvento}</nSeqEvento>
+    <verEvento>1.00</verEvento>
+    <detEvento versao="1.00">
+      <descEvento>${descEvento}</descEvento>${xJustXML}
+    </detEvento>
+  </infEvento>
+</evento>`;
 
+    // PASSO 2: Assinar XML do evento (conforme NT 2020.001 P91)
+    let xmlEventoAssinado: string;
+    if (privateKey && certificate) {
+      console.log('[Manifestação] 🔐 Assinando XML do evento com certificado digital...');
+      xmlEventoAssinado = signXmlEvento(xmlEventoSemAssinatura, privateKey, certificate);
+      console.log('[Manifestação] ✅ Assinatura digital aplicada com sucesso');
+    } else {
+      console.warn('[Manifestação] ⚠️ AVISO: Certificado não fornecido - XML NÃO será assinado (SEFAZ rejeitará!)');
+      xmlEventoAssinado = xmlEventoSemAssinatura;
+    }
+
+    // PASSO 3: Extrair apenas o conteúdo interno de <evento> (sem declaração XML)
+    // Remove <?xml...?> e tags <evento>...</evento> externas
+    const eventoMatch = xmlEventoAssinado.match(/<evento[^>]*>([\s\S]*)<\/evento>/);
+    if (!eventoMatch) {
+      throw new Error('Erro ao processar XML assinado: tag <evento> não encontrada');
+    }
+    const eventoConteudo = eventoMatch[1];
+
+    // PASSO 4: Embutir evento assinado no SOAP envelope
     return `<?xml version="1.0" encoding="utf-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
@@ -427,21 +460,7 @@ export class SefazService {
     <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
       <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
         <idLote>1</idLote>
-        <evento versao="1.00">
-          <infEvento Id="${idEvento}">
-            <cOrgao>91</cOrgao>
-            <tpAmb>${tpAmb}</tpAmb>
-            <CNPJ>${cnpj}</CNPJ>
-            <chNFe>${chaveNFe}</chNFe>
-            <dhEvento>${dhEvento}</dhEvento>
-            <tpEvento>${tpEvento}</tpEvento>
-            <nSeqEvento>${nSeqEvento}</nSeqEvento>
-            <verEvento>1.00</verEvento>
-            <detEvento versao="1.00">
-              <descEvento>${descEvento}</descEvento>${xJustXML}
-            </detEvento>
-          </infEvento>
-        </evento>
+        <evento versao="1.00">${eventoConteudo}</evento>
       </envEvento>
     </nfeDadosMsg>
   </soap12:Body>
@@ -1346,14 +1365,27 @@ export class SefazService {
         throw new Error("Evento 210240 (Operação não Realizada) requer justificativa de no mínimo 15 caracteres");
       }
 
-      // Monta envelope SOAP
+      // Carrega certificado para assinatura digital (NT 2020.001 exige assinatura)
+      let certData;
+      try {
+        certData = await loadPKCS12Certificate(
+          empresa.certificadoPath,
+          empresa.certificadoSenha
+        );
+      } catch (error: any) {
+        throw new Error(`Falha ao carregar certificado para manifestação: ${error.message}`);
+      }
+
+      // Monta envelope SOAP com assinatura digital
       const envelope = this.buildSOAPEnvelopeManifestacao(
         empresa.cnpj,
         chaveNFe,
         tpEvento,
         1, // nSeqEvento sempre 1 para primeira manifestação
         empresa.ambiente,
-        justificativa
+        justificativa,
+        certData.key,       // privateKey em PEM
+        certData.cert       // certificate em PEM
       );
 
       // DEBUG: Mostra envelope completo sendo enviado
