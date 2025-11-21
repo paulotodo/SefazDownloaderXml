@@ -518,10 +518,39 @@ export class SefazService {
           agent,
         };
 
+        // ========================================
+        // SOAP REQUEST LOGGING
+        // ========================================
+        console.log('\n╔═══════════════════════════════════════════════════════════════════════════════╗');
+        console.log('║ SOAP REQUEST - NFeDistribuicaoDFe (Download/Consulta)                        ║');
+        console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+        console.log(`║ Endpoint: ${url.href}`);
+        console.log(`║ Empresa CNPJ: ${empresa.cnpj}`);
+        console.log(`║ Ambiente: ${empresa.ambiente}`);
+        console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+        console.log('║ SOAP ENVELOPE (REQUEST):                                                      ║');
+        console.log('╚═══════════════════════════════════════════════════════════════════════════════╝');
+        console.log(envelope);
+        console.log('╔═══════════════════════════════════════════════════════════════════════════════╗\n');
+
         const req = https.request(options, (res) => {
           let data = "";
           res.on("data", (chunk) => (data += chunk));
           res.on("end", () => {
+            // ========================================
+            // SOAP RESPONSE LOGGING
+            // ========================================
+            console.log('\n╔═══════════════════════════════════════════════════════════════════════════════╗');
+            console.log('║ SOAP RESPONSE - NFeDistribuicaoDFe (Download/Consulta)                       ║');
+            console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+            console.log(`║ HTTP Status: ${res.statusCode}`);
+            console.log(`║ Empresa CNPJ: ${empresa.cnpj}`);
+            console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+            console.log('║ SOAP ENVELOPE (RESPONSE):                                                     ║');
+            console.log('╚═══════════════════════════════════════════════════════════════════════════════╝');
+            console.log(data);
+            console.log('╔═══════════════════════════════════════════════════════════════════════════════╗\n');
+
             if (res.statusCode && res.statusCode >= 400) {
               reject(new Error(`HTTP ${res.statusCode}: ${data}`));
             } else {
@@ -587,10 +616,39 @@ export class SefazService {
           agent,
         };
 
+        // ========================================
+        // SOAP REQUEST LOGGING
+        // ========================================
+        console.log('\n╔═══════════════════════════════════════════════════════════════════════════════╗');
+        console.log('║ SOAP REQUEST - NfeDownloadNF (Download Direto)                               ║');
+        console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+        console.log(`║ Endpoint: ${url.href}`);
+        console.log(`║ Empresa CNPJ: ${empresa.cnpj}`);
+        console.log(`║ Ambiente: ${empresa.ambiente}`);
+        console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+        console.log('║ SOAP ENVELOPE (REQUEST):                                                      ║');
+        console.log('╚═══════════════════════════════════════════════════════════════════════════════╝');
+        console.log(envelope);
+        console.log('╔═══════════════════════════════════════════════════════════════════════════════╗\n');
+
         const req = https.request(options, (res) => {
           let data = "";
           res.on("data", (chunk) => (data += chunk));
           res.on("end", () => {
+            // ========================================
+            // SOAP RESPONSE LOGGING
+            // ========================================
+            console.log('\n╔═══════════════════════════════════════════════════════════════════════════════╗');
+            console.log('║ SOAP RESPONSE - NfeDownloadNF (Download Direto)                              ║');
+            console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+            console.log(`║ HTTP Status: ${res.statusCode}`);
+            console.log(`║ Empresa CNPJ: ${empresa.cnpj}`);
+            console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+            console.log('║ SOAP ENVELOPE (RESPONSE):                                                     ║');
+            console.log('╚═══════════════════════════════════════════════════════════════════════════════╝');
+            console.log(data);
+            console.log('╔═══════════════════════════════════════════════════════════════════════════════╗\n');
+
             if (res.statusCode && res.statusCode >= 400) {
               reject(new Error(`HTTP ${res.statusCode}: ${data}`));
             } else {
@@ -659,10 +717,39 @@ export class SefazService {
           agent,
         };
 
+        // ========================================
+        // SOAP REQUEST LOGGING
+        // ========================================
+        console.log('\n╔═══════════════════════════════════════════════════════════════════════════════╗');
+        console.log('║ SOAP REQUEST - NFeRecepcaoEvento (MANIFESTAÇÃO)                              ║');
+        console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+        console.log(`║ Endpoint: ${url.href}`);
+        console.log(`║ Empresa CNPJ: ${empresa.cnpj}`);
+        console.log(`║ Ambiente: ${empresa.ambiente}`);
+        console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+        console.log('║ SOAP ENVELOPE (REQUEST):                                                      ║');
+        console.log('╚═══════════════════════════════════════════════════════════════════════════════╝');
+        console.log(envelope);
+        console.log('╔═══════════════════════════════════════════════════════════════════════════════╗\n');
+
         const req = https.request(options, (res) => {
           let data = "";
           res.on("data", (chunk) => (data += chunk));
           res.on("end", () => {
+            // ========================================
+            // SOAP RESPONSE LOGGING
+            // ========================================
+            console.log('\n╔═══════════════════════════════════════════════════════════════════════════════╗');
+            console.log('║ SOAP RESPONSE - NFeRecepcaoEvento (MANIFESTAÇÃO)                             ║');
+            console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+            console.log(`║ HTTP Status: ${res.statusCode}`);
+            console.log(`║ Empresa CNPJ: ${empresa.cnpj}`);
+            console.log('╠═══════════════════════════════════════════════════════════════════════════════╣');
+            console.log('║ SOAP ENVELOPE (RESPONSE):                                                     ║');
+            console.log('╚═══════════════════════════════════════════════════════════════════════════════╝');
+            console.log(data);
+            console.log('╔═══════════════════════════════════════════════════════════════════════════════╗\n');
+
             if (res.statusCode && res.statusCode >= 400) {
               reject(new Error(`HTTP ${res.statusCode}: ${data}`));
             } else {
