@@ -263,43 +263,35 @@ export class SefazService {
     // Descrição do evento conforme tipo
     const descEvento = this.getTipoEventoDescricao(tpEvento);
 
-    // XML do evento (detEvento)
-    let detEventoXML = `<detEvento versao="1.00">
-      <descEvento>${descEvento}</descEvento>`;
-    
-    if (justificativa) {
-      detEventoXML += `
-      <xJust>${justificativa}</xJust>`;
-    }
-    
-    detEventoXML += `
-    </detEvento>`;
+    // XML do evento (detEvento) - CORREÇÃO: adicionar xJust dentro de detEvento inline
+    // Conforme NT 2020.001, detEvento precisa estar dentro de infEvento
+    const xJustXML = justificativa ? `<xJust>${justificativa}</xJust>` : '';
 
     return `<?xml version="1.0" encoding="utf-8"?>
 <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
                  xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
   <soap12:Body>
-    <nfeRecepcaoEvento xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
-      <nfeDadosMsg>
-        <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
-          <idLote>1</idLote>
-          <evento versao="1.00">
-            <infEvento Id="${idEvento}">
-              <cOrgao>91</cOrgao>
-              <tpAmb>${tpAmb}</tpAmb>
-              <CNPJ>${cnpj}</CNPJ>
-              <chNFe>${chaveNFe}</chNFe>
-              <dhEvento>${dhEvento}</dhEvento>
-              <tpEvento>${tpEvento}</tpEvento>
-              <nSeqEvento>${nSeqEvento}</nSeqEvento>
-              <verEvento>1.00</verEvento>
-              ${detEventoXML}
-            </infEvento>
-          </evento>
-        </envEvento>
-      </nfeDadosMsg>
-    </nfeRecepcaoEvento>
+    <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
+      <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+        <idLote>1</idLote>
+        <evento versao="1.00">
+          <infEvento Id="${idEvento}">
+            <cOrgao>91</cOrgao>
+            <tpAmb>${tpAmb}</tpAmb>
+            <CNPJ>${cnpj}</CNPJ>
+            <chNFe>${chaveNFe}</chNFe>
+            <dhEvento>${dhEvento}</dhEvento>
+            <tpEvento>${tpEvento}</tpEvento>
+            <nSeqEvento>${nSeqEvento}</nSeqEvento>
+            <verEvento>1.00</verEvento>
+            <detEvento versao="1.00">
+              <descEvento>${descEvento}</descEvento>${xJustXML}
+            </detEvento>
+          </infEvento>
+        </evento>
+      </envEvento>
+    </nfeDadosMsg>
   </soap12:Body>
 </soap12:Envelope>`;
   }
@@ -1112,20 +1104,20 @@ export class SefazService {
         throw new Error("Resposta SEFAZ inválida: Body SOAP não encontrado");
       }
       
-      // CORREÇÃO: Busca nfeRecepcaoEventoResult (com namespace)
-      const recepcaoEventoResult = 
+      // CORREÇÃO: Busca nfeResultMsg (tag correta conforme NT 2020.001)
+      const nfeResultMsg = 
+        body["nfeResultMsg"] || 
         body["nfeRecepcaoEventoResult"] || 
-        body["nfeRecepcaoEvento4Result"] ||
-        body["nfe:nfeRecepcaoEventoResult"];
+        body["nfe:nfeResultMsg"];
       
-      if (!recepcaoEventoResult) {
-        console.error('[Manifestação] ❌ nfeRecepcaoEventoResult não encontrado. Keys body:', Object.keys(body));
-        throw new Error("Resposta SEFAZ inválida: nfeRecepcaoEventoResult não encontrado");
+      if (!nfeResultMsg) {
+        console.error('[Manifestação] ❌ nfeResultMsg não encontrado. Keys body:', Object.keys(body));
+        throw new Error("Resposta SEFAZ inválida: nfeResultMsg não encontrado");
       }
       
-      const retEnvEvento = recepcaoEventoResult["retEnvEvento"];
+      const retEnvEvento = nfeResultMsg["retEnvEvento"];
       if (!retEnvEvento) {
-        console.error('[Manifestação] ❌ retEnvEvento não encontrado. Keys:', Object.keys(recepcaoEventoResult));
+        console.error('[Manifestação] ❌ retEnvEvento não encontrado. Keys:', Object.keys(nfeResultMsg));
         throw new Error("Resposta SEFAZ inválida: retEnvEvento não encontrado");
       }
       
