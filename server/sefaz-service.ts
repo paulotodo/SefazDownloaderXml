@@ -407,6 +407,8 @@ export class SefazService {
     // PASSO 1: Montar XML do evento (sem assinatura)
     // CRÍTICO XSD: nSeqEvento elemento usa valor SEM padding (1-99), mas Id usa COM padding (01-99)
     // TSeqEvento schema: [1-9][0-9]? - não aceita "01", apenas "1"
+    // CRÍTICO cStat 215 FIX: detEvento DEVE ter xmlns EXPLÍCITO (não apenas herdar do pai)
+    console.log('[buildSOAPEnvelopeManifestacao] 🔧 CÓDIGO ATUALIZADO - detEvento terá xmlns EXPLÍCITO');
     const xmlEventoSemAssinatura = `<?xml version="1.0" encoding="utf-8"?>
 <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
   <infEvento Id="${idEvento}">
@@ -418,7 +420,7 @@ export class SefazService {
     <tpEvento>${tpEvento}</tpEvento>
     <nSeqEvento>${nSeqEvento}</nSeqEvento>
     <verEvento>1.00</verEvento>
-    <detEvento versao="1.00">
+    <detEvento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">
       <descEvento>${descEvento}</descEvento>${xJustXML}
     </detEvento>
   </infEvento>
@@ -431,8 +433,16 @@ export class SefazService {
     
     // Assinar XML (agora sempre obrigatório)
     console.log('[Manifestação] 🔐 Assinando XML do evento com certificado digital...');
-    const xmlEventoAssinado = signXmlEvento(xmlEventoSemAssinatura, privateKey, certificate);
+    let xmlEventoAssinado = signXmlEvento(xmlEventoSemAssinatura, privateKey, certificate);
     console.log('[Manifestação] ✅ Assinatura digital aplicada com sucesso');
+
+    // PASSO 2.5: FORÇA xmlns no detEvento via replace (workaround para garantir que mesmo se template string não funcionar, o xmlns seja adicionado)
+    // CRÍTICO cStat 215 FIX: detEvento DEVE ter xmlns="http://www.portalfiscal.inf.br/nfe" EXPLÍCITO
+    xmlEventoAssinado = xmlEventoAssinado.replace(
+      /<detEvento versao="1\.00">/g,
+      '<detEvento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">'
+    );
+    console.log('[Manifestação] ✅ XMLNS FORÇADO no detEvento via replace (workaround cStat 215)');
 
     // PASSO 3: Extrair tag <evento> COMPLETA (incluindo xmlns) do XML assinado
     // Remove apenas declaração <?xml...?> mas PRESERVA <evento xmlns="...">

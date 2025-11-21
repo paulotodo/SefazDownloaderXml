@@ -67,6 +67,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Endpoint para testar geração de XML de manifestação (DEBUG)
+  app.post("/api/debug/test-manifestacao", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    try {
+      const empresas = await storage.getEmpresas(userId);
+      if (!empresas || empresas.length === 0) {
+        return res.status(404).json({ error: "Nenhuma empresa cadastrada" });
+      }
+      
+      const empresa = empresas[0];
+      
+      // Pega primeiro XML pendente de manifestação
+      const xmlsPendentes = await storage.getXmlsByStatus(empresa.id, "aguardando_manifestacao");
+      if (!xmlsPendentes || xmlsPendentes.length === 0) {
+        return res.status(404).json({ error: "Nenhum XML pendente de manifestação" });
+      }
+      
+      const chaveNFe = xmlsPendentes[0].chaveNfe;
+      
+      // Gera envelope SOAP de manifestação
+      const envelope = await (sefazService as any).buildSOAPEnvelopeManifestacao(
+        empresa,
+        chaveNFe,
+        "210210",
+        null,
+        1
+      );
+      
+      // Salva XML em arquivo temporário
+      const xmlFilePath = path.join(process.cwd(), "debug-manifestacao.xml");
+      await fs.writeFile(xmlFilePath, envelope, "utf-8");
+      
+      res.json({
+        success: true,
+        message: "XML salvo em debug-manifestacao.xml",
+        chaveNFe,
+        xmlPath: xmlFilePath,
+        xmlPreview: envelope.substring(0, 1000) + "..."
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Endpoint para desbloquear empresa manualmente (DEBUG - remover em produção)
   app.post("/api/debug/desbloquear/:empresaId", authenticateUser, async (req, res) => {
     const userId = req.user!.id;
