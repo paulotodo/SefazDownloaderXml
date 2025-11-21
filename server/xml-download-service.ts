@@ -350,7 +350,10 @@ export class XmlDownloadService {
     cStat: string
   ): Promise<void> {
     // Extrai informações do XML completo
-    const dataEmissao = xmlOriginal.dataEmissao;
+    // CORREÇÃO: dataEmissao pode vir como string do DB - converter para Date
+    const dataEmissao = xmlOriginal.dataEmissao instanceof Date 
+      ? xmlOriginal.dataEmissao 
+      : new Date(xmlOriginal.dataEmissao);
     const ano = dataEmissao.getFullYear();
     const mes = (dataEmissao.getMonth() + 1).toString().padStart(2, "0");
     const tipoDoc = xmlOriginal.modelo === "65" ? "NFCe" : "NFe";
