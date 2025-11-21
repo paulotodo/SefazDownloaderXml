@@ -11,6 +11,33 @@
 ## Overview
 This web application automates the download of XMLs (nfeProc) from SEFAZ, offering hourly synchronization for multiple registered companies. It provides a robust, multi-tenant solution for managing fiscal documents, aiming to streamline compliance and data access for businesses, reducing manual effort. Key features include automated manifestation of recipient events, hybrid storage options, and comprehensive handling of SEFAZ regulations, promising efficiency in fiscal document management. The project's ambition is to provide a reliable and efficient system for fiscal document management, reducing manual effort and ensuring compliance for businesses.
 
+## Recent Changes (November 2024)
+
+### ✅ XML Digital Signature Implementation (cStat 215 FIX)
+**Date**: November 21, 2025  
+**Status**: COMPLETE - Architect Reviewed and Approved
+
+**Problem Identified**: 
+- Manifestation requests were returning cStat 215 ("Rejeição: Falha no Schema XML do lote de evento")
+- Root cause: Missing XML digital signature in recipient manifestation events (NT 2020.001 § 6.3 requirement)
+
+**Solution Implemented**:
+1. **Refactored `buildSOAPEnvelopeManifestacao`** (`server/sefaz-service.ts` lines 420-471):
+   - Generates unsigned evento XML structure
+   - Signs XML using `signXmlEvento` with RSA-SHA256 and exclusive canonicalization
+   - Extracts signed content with `ds:Signature` block
+   - Embeds signed evento into SOAP envelope
+
+2. **Modified `manifestarEvento`** (`server/sefaz-service.ts` lines 1371-1392):
+   - Loads PKCS#12 certificate via `loadPKCS12Certificate`
+   - Passes privateKey and certificate to `buildSOAPEnvelopeManifestacao` for signing
+
+**Verification**: Architect confirmed implementation is fully compliant with NT 2020.001 specifications, uses correct cryptographic algorithms, and has no security issues.
+
+**Next Step**: Apply migration `supabase-migration-rate-limit-status.sql` in Supabase Production to enable rate limiting and validate fix (expects cStat 135/573 instead of 215).
+
+---
+
 ## User Preferences
 I prefer clear and direct communication. When making changes or suggesting improvements, please explain the "why" behind them, focusing on the benefits and potential impact. I value iterative development and would like to be consulted before any major architectural shifts or significant code refactoring. Please ensure that all suggestions are actionable and provide code examples where appropriate. I prefer a coding style that emphasizes readability and maintainability, utilizing TypeScript's type safety effectively.
 
