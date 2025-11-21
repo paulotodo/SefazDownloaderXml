@@ -1,0 +1,116 @@
+**Avaliação do seu prompt**
+
+* **Nota:** 9 / 10
+* **Comentário:** Está bem direto: você pede um *exemplo de SOAP* para download da NF-e completa, seguindo a documentação oficial. Poderia ficar ainda mais específico se mencionasse explicitamente o serviço (**NFeDistribuicaoDFe**) e o tipo de consulta (**por chave – `consChNFe`**), mas já está suficiente para eu executar.
+
+Como a nota é **≥ 8**, vou **executar o pedido**.
+
+---
+
+## Qual web service oficial usar hoje?
+
+Pela documentação mais recente, o caminho oficial para obter o **XML completo da NF-e** (quando você é um dos atores autorizados) é o **Web Service NFeDistribuicaoDFe**, definido na **Nota Técnica 2014.002**.([Fiscosoft][1])
+
+Você faz uma chamada ao método **`nfeDistDFeInteresse`**, enviando no corpo o XML `distDFeInt` (versão 1.01 para consulta por chave) e recebe na resposta um `retDistDFeInt` com um ou mais `<docZip>` compactados em **GZip + Base64**, contendo o `procNFe` (NF-e + protocolo).([Wiki Unimake][2])
+
+---
+
+## Exemplo de SOAP 1.2 – Download da NF-e completa via `NFeDistribuicaoDFe` (por chave de acesso)
+
+> 🔧 Exemplo alinhado à **NT 2014.002**: SOAP 1.2, cabeçalho `nfeCabecMsg` com `cUF` e `versaoDados`, corpo com `distDFeInt versao="1.01"` usando `consChNFe`.([Fiscosoft][1])
+
+Ajuste **CNPJ**, **chNFe**, **tpAmb**, **cUFAutor** e **cUF** conforme seu cenário real.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<soap12:Envelope
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+
+  <!-- Cabeçalho SOAP obrigatório segundo a NT 2014.002 -->
+  <soap12:Header>
+    <nfeCabecMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+      <!-- UF a quem você está chamando: para o Ambiente Nacional é 91 -->
+      <cUF>91</cUF>
+      <!-- Versão do leiaute da mensagem de dados (distDFeInt) -->
+      <versaoDados>1.01</versaoDados>
+    </nfeCabecMsg>
+  </soap12:Header>
+
+  <soap12:Body>
+    <nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+      <nfeDadosMsg>
+        <!-- XML da área de dados, sem prefixo de namespace -->
+        <distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+          <!-- Ambiente: 1 = produção, 2 = homologação -->
+          <tpAmb>1</tpAmb>
+
+          <!-- UF autora da consulta (IBGE), ex.: 35 = SP -->
+          <cUFAutor>35</cUFAutor>
+
+          <!-- CNPJ ou CPF do interessado (deve bater com o certificado) -->
+          <CNPJ>12345678000123</CNPJ>
+
+          <!-- Consulta pela chave de acesso da NF-e -->
+          <consChNFe>
+            <chNFe>35240123456789000123550010000000011000000011</chNFe>
+          </consChNFe>
+        </distDFeInt>
+      </nfeDadosMsg>
+    </nfeDistDFeInteresse>
+  </soap12:Body>
+</soap12:Envelope>
+```
+
+### O que vem na resposta (onde está a NF-e completa)
+
+A resposta SOAP segue o padrão descrito na NT 2014.002 e em exemplos de implementação (UniNFe, grupos de desenvolvedores etc.):([Wiki Unimake][2])
+
+* Corpo SOAP com `nfeDistDFeInteresseResponse`
+* Dentro dele, um `nfeDistDFeInteresseResult`
+* E, dentro, o XML `retDistDFeInt`, algo nessa linha:
+
+```xml
+<soap12:Envelope ...>
+  <soap12:Body>
+    <nfeDistDFeInteresseResponse
+        xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+      <nfeDistDFeInteresseResult>
+        <retDistDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+          <tpAmb>1</tpAmb>
+          <verAplic>1.1.9</verAplic>
+          <cStat>138</cStat>
+          <xMotivo>Documento localizado</xMotivo>
+          <dhResp>2025-11-21T13:50:00-03:00</dhResp>
+          <ultNSU>000000000000123</ultNSU>
+          <maxNSU>000000000000123</maxNSU>
+
+          <loteDistDFeInt>
+            <!-- Aqui vem a NF-e completa, compactada em GZip+Base64 -->
+            <docZip NSU="000000000000123" schema="procNFe_v4.00.xsd">
+              H4sIAAAAAAAE...
+            </docZip>
+          </loteDistDFeInt>
+        </retDistDFeInt>
+      </nfeDistDFeInteresseResult>
+    </nfeDistDFeInteresseResponse>
+  </soap12:Body>
+</soap12:Envelope>
+```
+
+Para obter o XML da NF-e completa, você precisa:
+
+1. Ler o conteúdo de `<docZip>` (string Base64).([Wiki Unimake][2])
+2. Fazer **Base64 decode** → obtém um binário GZip.
+3. Descompactar o GZip → o resultado é um XML `procNFe` (NF-e + protocolo de autorização).
+
+---
+
+Se quiser, no próximo passo posso montar:
+
+* um fluxinho em pseudo-código (ou Python/Node) fazendo **requisição + decode Base64 + descompactação GZip**,
+* ou adaptar o SOAP exatamente para o ambiente que você estiver usando (prod/hom, biblioteca X, etc.).
+
+[1]: https://www.fiscosoft.com.br/objetos/NT2014.002_v1.00_WS_Distribiucao_DFE.pdf "Projeto Nota Fiscal Eletrônica"
+[2]: https://wiki.unimake.com.br/index.php/Manuais%3AUniNFe/NFeDistribuicaoDFe "Manuais:UniNFe/NFeDistribuicaoDFe - unimake"
