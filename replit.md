@@ -77,6 +77,53 @@ This web application automates the download of XMLs (nfeProc) from SEFAZ, offeri
 
 ---
 
+### ✅ Retry Infinito para XMLs com Erro (INFINITE RETRY FIX)
+**Date**: November 21, 2025  
+**Status**: ✅ IMPLEMENTED & APPROVED
+
+**Problem Identified**: 
+- XMLs que falhavam múltiplas vezes ficavam marcados como `status_download="erro"` permanentemente
+- Sistema limitava a 2 tentativas (`MAX_TENTATIVAS = 2`)
+- XMLs com erro definitivo não eram retentados automaticamente nas próximas sincronizações
+
+**Solution Implemented**:
+
+**1. Removido Limite de Tentativas** (`server/xml-download-service.ts`):
+   - `MAX_TENTATIVAS` aumentado de 2 → 999 (equivalente a infinito)
+   - Removido check que marcava erro permanente após limite (linhas 270-275)
+   - Catch block sempre mantém `status_download="pendente"` ao invés de "erro" (linhas 322-340)
+
+**2. Reset Automático de XMLs com Erro** (linhas 181-198):
+   - Detecta `statusDownload === "erro"` ao processar
+   - Reseta para `status_download="pendente"`, `tentativasDownload=0`, `erroDownload=null`
+   - **CRÍTICO**: Cálculo de tentativas movido para APÓS reset (evita uso de valor antigo)
+
+**3. Query Otimizada** (`server/supabase-storage.ts` linhas 537-556):
+   - `getXmlsComErroDownload` agora busca apenas `status_download="erro"` (sem filtro de tentativas)
+   - Removido `.gt("tentativas_download", 0)` que excluía XMLs resetados
+   - XMLs com `status_download="pendente"` processados por `getXmlsPendentesDownload`
+
+**4. Manifestação com Retry Infinito** (linhas 207-208):
+   - Removido limite de tentativas de manifestação
+   - Sistema sempre tenta manifestar, independente de falhas anteriores
+
+**Fluxo Garantido:**
+1. Cron a cada 5 min busca XMLs com `status="pendente"` OU `status="erro"`
+2. XMLs com erro são resetados para `pendente` com `tentativasDownload=0`
+3. Tenta manifestar (sem limite)
+4. Tenta download (sem limite)
+5. Se falhar, mantém como `pendente` (não marca erro)
+6. Rate limit (20/hora) é única proteção - mas não desiste permanentemente
+
+**Benefits:**
+✅ Retry infinito verdadeiro - XMLs nunca são abandonados
+✅ Rate limit respeitado (evita cStat 656)
+✅ Manifestação automática sempre retentada
+✅ Nenhum XML fica órfão no sistema
+✅ Logs registram tentativas para debugging
+
+---
+
 ## User Preferences
 I prefer clear and direct communication. When making changes or suggesting improvements, please explain the "why" behind them, focusing on the benefits and potential impact. I value iterative development and would like to be consulted before any major architectural shifts or significant code refactoring. Please ensure that all suggestions are actionable and provide code examples where appropriate. I prefer a coding style that emphasizes readability and maintainability, utilizing TypeScript's type safety effectively.
 
