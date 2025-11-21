@@ -405,7 +405,8 @@ export class SefazService {
     const xJustXML = justificativa ? `<xJust>${justificativa}</xJust>` : '';
 
     // PASSO 1: Montar XML do evento (sem assinatura)
-    // IMPORTANTE: nSeqEvento no elemento é "1", mas no Id é "01" (com padStart)
+    // CORREÇÃO: nSeqEvento com zero à esquerda para consistência com Id (ambos "01")
+    const nSeqEventoFormatado = nSeqEvento.toString().padStart(2, "0");
     const xmlEventoSemAssinatura = `<?xml version="1.0" encoding="utf-8"?>
 <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
   <infEvento Id="${idEvento}">
@@ -415,7 +416,7 @@ export class SefazService {
     <chNFe>${chaveNFe}</chNFe>
     <dhEvento>${dhEvento}</dhEvento>
     <tpEvento>${tpEvento}</tpEvento>
-    <nSeqEvento>${nSeqEvento}</nSeqEvento>
+    <nSeqEvento>${nSeqEventoFormatado}</nSeqEvento>
     <verEvento>1.00</verEvento>
     <detEvento versao="1.00">
       <descEvento>${descEvento}</descEvento>${xJustXML}

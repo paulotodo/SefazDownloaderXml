@@ -70,6 +70,7 @@ export interface IStorage {
 
   // Rate Limiting SEFAZ (evita cStat 656 - máx 20 consultas/hora)
   checkRateLimit(empresaId: string, tipoOperacao: string, userId: string): Promise<boolean>;
+  resetRateLimit(empresaId: string): Promise<void>;
   
   // Atualizar status NFe (cancelada, denegada, etc)
   updateXmlStatus(id: string, statusNfe: string, userId?: string): Promise<Xml | null>;

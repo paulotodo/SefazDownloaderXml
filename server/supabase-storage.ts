@@ -963,6 +963,31 @@ export class SupabaseStorage implements IStorage {
   }
 
   /**
+   * Reseta rate limit para uma empresa (DEV ONLY)
+   * Remove todos os registros de controle de rate limit permitindo novas consultas imediatas
+   * 
+   * @param empresaId - ID da empresa
+   */
+  async resetRateLimit(empresaId: string): Promise<void> {
+    try {
+      const { error } = await supabaseAdmin
+        .from("rate_limit_control")
+        .delete()
+        .eq("empresa_id", empresaId);
+
+      if (error) {
+        console.error("[SupabaseStorage] Erro ao resetar rate limit:", error.message);
+        throw error;
+      }
+
+      console.log(`[SupabaseStorage] ✅ Rate limit resetado para empresa ${empresaId}`);
+    } catch (error: any) {
+      console.error("[SupabaseStorage] Exceção ao resetar rate limit:", error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Atualiza status da NFe (cancelada, denegada, etc)
    * 
    * @param id - ID do XML

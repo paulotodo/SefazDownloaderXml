@@ -102,6 +102,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Endpoint para resetar rate limit (DEV ONLY - facilitar testes)
+  app.post("/api/dev/reset-rate-limit/:empresaId", authenticateUser, async (req, res) => {
+    const userId = req.user!.id;
+    const empresaId = req.params.empresaId;
+    
+    try {
+      const empresa = await storage.getEmpresa(empresaId, userId);
+      if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+      }
+
+      // Resetar rate limits
+      await storage.resetRateLimit(empresaId);
+      
+      await storage.createLog({
+        userId,
+        empresaId,
+        sincronizacaoId: null,
+        nivel: "info",
+        mensagem: `Rate limit resetado manualmente (DEV)`,
+        detalhes: JSON.stringify({ 
+          empresa: empresa.razaoSocial,
+          timestamp: new Date().toISOString()
+        }),
+      });
+
+      res.json({ 
+        success: true, 
+        mensagem: "Rate limit resetado com sucesso. Próximo ciclo poderá executar manifestações/downloads.",
+        empresa: empresa.razaoSocial
+      });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // ========== AUTENTICAÇÃO ==========
   app.use("/api/auth", authRoutes);
 
