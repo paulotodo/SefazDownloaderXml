@@ -294,7 +294,35 @@ export class XmlDownloadService {
       // Consulta XML completo via chave de acesso
       const resultado = await sefazService.consultarChave(xml.chaveNFe, empresa);
 
-      if (!resultado || !resultado.xmlContent) {
+      if (!resultado) {
+        throw new Error("SEFAZ retornou sem XML completo");
+      }
+
+      // cStat 653: NF-e cancelada - marca como cancelada sem salvar XML
+      if (resultado.cStat === "653") {
+        await storage.updateXml(xml.id, {
+          statusDownload: "cancelada",
+          statusNfe: "cancelada",
+          erroDownload: "NF-e cancelada - arquivo indisponível para download (cStat 653)",
+        });
+        
+        console.log(`[Download Service] ✓ NF-e ${xml.numeroNF} marcada como CANCELADA (cStat 653)`);
+        
+        await storage.createLog({
+          userId: xml.userId,
+          empresaId: xml.empresaId,
+          nivel: "warning",
+          mensagem: `NF-e ${xml.numeroNF} está cancelada`,
+          detalhes: JSON.stringify({ 
+            chaveNFe: xml.chaveNFe,
+            cStat: "653",
+            motivo: "NF-e Cancelada - arquivo indisponível para download"
+          }),
+        });
+        return; // Não tenta salvar XML
+      }
+
+      if (!resultado.xmlContent) {
         throw new Error("SEFAZ retornou sem XML completo");
       }
 
@@ -386,11 +414,13 @@ export class XmlDownloadService {
     let statusNfe = "autorizada"; // Default
     switch (cStat) {
       case "100":
+      case "138": // Documento localizado
         statusNfe = "autorizada";
         break;
       case "101":
+      case "653": // NF-e cancelada (arquivo indisponível)
         statusNfe = "cancelada";
-        console.log(`[Download Service] NFe ${xmlOriginal.numeroNF} está CANCELADA (cStat 101)`);
+        console.log(`[Download Service] NFe ${xmlOriginal.numeroNF} está CANCELADA (cStat ${cStat})`);
         break;
       case "110":
       case "301":

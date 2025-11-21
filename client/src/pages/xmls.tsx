@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Download, Search, FolderOpen, ChevronRight, ChevronDown, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { FileText, Download, Search, FolderOpen, ChevronRight, ChevronDown, CheckCircle2, XCircle, Clock, Ban } from "lucide-react";
 import { useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -29,6 +29,7 @@ interface Xml {
   statusDownload?: string;
   tentativasDownload?: number;
   erroDownload?: string;
+  statusNfe?: string;
   manifestacao?: {
     id: string;
     tipoEvento: string;
@@ -107,6 +108,28 @@ function getManifestacaoBadge(xml: Xml) {
       {manifestacao.status}
     </Badge>
   );
+}
+
+function getStatusNfeBadge(xml: Xml) {
+  if (xml.statusNfe === "cancelada") {
+    return (
+      <Badge variant="destructive" className="gap-1 text-xs">
+        <Ban className="w-3 h-3" />
+        Cancelada
+      </Badge>
+    );
+  }
+  
+  if (xml.statusNfe === "denegada") {
+    return (
+      <Badge variant="destructive" className="gap-1 text-xs">
+        <XCircle className="w-3 h-3" />
+        Denegada
+      </Badge>
+    );
+  }
+  
+  return null;
 }
 
 function getTipoDocumentoBadge(xml: Xml) {
@@ -486,6 +509,7 @@ export default function Xmls() {
                                               </p>
                                             </div>
                                             <div className="flex items-center gap-1 flex-wrap">
+                                              {getStatusNfeBadge(xml)}
                                               {getTipoDocumentoBadge(xml)}
                                               {getManifestacaoBadge(xml)}
                                               {getDownloadBadge(xml)}

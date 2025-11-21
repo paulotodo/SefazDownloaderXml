@@ -1473,6 +1473,13 @@ export class SefazService {
         }
       }
 
+      // cStat 653: NF-e Cancelada (arquivo indisponível)
+      if (cStat === "653") {
+        console.log(`[consultarChave] Chave ${chaveNFe} não retornou nfeProc (cStat=653: ${xMotivo})`);
+        // Retorna cStat para marcar como cancelada no banco
+        return { xmlContent: "", cStat: "653" };
+      }
+
       // cStat 137: Nenhum documento encontrado
       // cStat 656: Consumo indevido (já consultado antes)
       console.log(`[consultarChave] Chave ${chaveNFe} não retornou nfeProc (cStat=${cStat}: ${xMotivo})`);
