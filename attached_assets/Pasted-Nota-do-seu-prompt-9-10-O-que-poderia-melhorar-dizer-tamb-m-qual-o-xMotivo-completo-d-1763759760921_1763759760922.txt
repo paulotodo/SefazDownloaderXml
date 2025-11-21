@@ -1,0 +1,211 @@
+Nota do seu prompt: **9/10**
+**O que poderia melhorar:** dizer também qual é o *xMotivo* completo da resposta da SEFAZ (provavelmente “Rejeição: Falha no Schema XML do lote de NFe”) e qual biblioteca você está usando para assinar o XML (Node, .NET, etc.). Isso ajudaria a eu te devolver código-alvo direto.
+
+---
+
+### 1. O que significa o **cStat 225** nesse contexto
+
+Para eventos (cancelamento, CC-e, manifestação), o **cStat 225** =
+
+> **“Rejeição: Falha no Schema XML do lote de NFe”** ([Google Grupos][1])
+
+Ou seja: **alguma parte do XML não bate com os XSD oficiais** (estrutura ou valores).
+No seu caso, como estamos falando de Manifestação (`NFeRecepcaoEvento4`), isso significa que o seu `envEvento` (incluindo a assinatura) **não está de acordo com**:
+
+* `envConfRecebto_v1.00.xsd`
+* `leiauteConfRecebto_v1.00.xsd`
+* `tiposBasico_v1.03.xsd`
+* `xmldsig-core-schema_v1.01.xsd` (XSD de assinatura usado pela NF-e) ([Portal dos Documentos Fiscais][2])
+
+---
+
+### 2. Conferindo o seu XML
+
+O seu SOAP:
+
+```xml
+<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+  <idLote>1</idLote>
+  <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
+    <infEvento Id="ID2102102325110095439400011755004003616360113355117001">
+      <cOrgao>91</cOrgao>
+      <tpAmb>1</tpAmb>
+      <CNPJ>07082454000440</CNPJ>
+      <chNFe>23251100954394000117550040036163601133551170</chNFe>
+      <dhEvento>2025-11-21T18:05:08-03:00</dhEvento>
+      <tpEvento>210210</tpEvento>
+      <nSeqEvento>1</nSeqEvento>
+      <verEvento>1.00</verEvento>
+      <detEvento versao="1.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+        <descEvento>Ciencia da Operacao</descEvento>
+      </detEvento>
+    </infEvento>
+    <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+      ...
+    </Signature>
+  </evento>
+</envEvento>
+```
+
+Eu bati isso contra os XSDs que você anexou (principalmente `tiposBasico_v1.03` e `leiauteConfRecebto_v1.00`), e:
+
+* `cOrgao=91` (Ambiente Nacional) ✔
+* `tpAmb=1` (produção) ✔
+* `CNPJ`, `chNFe` 44 dígitos ✔
+* `dhEvento=2025-11-21T18:05:08-03:00` está no formato `AAAA-MM-DDThh:mm:ssTZD` e o padrão de `TDateTimeUTC` aceita `-03:00` ✔([FlexDocs][3])
+* `tpEvento=210210` + `descEvento=Ciencia da Operacao` ✔ (é exatamente o valor previsto pelo leiaute de manifestação) ([Nota Fiscal Eletrônica][4])
+* `Id="ID210210...7001"` está coerente com o padrão `ID` + `tpEvento` + `chNFe` + `nSeqEvento` (2 dígitos) ✔
+
+**Ou seja: o evento em si está certo.
+O problema está na parte da assinatura (`Signature`).**
+
+---
+
+### 3. Onde o seu XML foge do schema
+
+O XSD **`xmldsig-core-schema_v1.01.xsd` específico da NF-e** (o mesmo que você anexou e o mesmo que aparece nos manuais) **fixa** os algoritmos aceitos na assinatura: ([Portal dos Documentos Fiscais][2])
+
+* `CanonicalizationMethod/@Algorithm`
+
+  * **XSD exige**: `http://www.w3.org/TR/2001/REC-xml-c14n-20010315`
+* `SignatureMethod/@Algorithm`
+
+  * **XSD exige**: `http://www.w3.org/2000/09/xmldsig#rsa-sha1`
+* `DigestMethod/@Algorithm`
+
+  * **XSD exige**: `http://www.w3.org/2000/09/xmldsig#sha1`
+* `Transform/@Algorithm` (tipo `TTransformURI`)
+
+  * **XSD permite apenas**:
+
+    * `http://www.w3.org/2000/09/xmldsig#enveloped-signature`
+    * `http://www.w3.org/TR/2001/REC-xml-c14n-20010315`
+
+No seu XML, a assinatura veio assim (resumindo):
+
+```xml
+<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+  <SignedInfo>
+    <CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+    <SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+    <Reference URI="#ID2102...17001">
+      <Transforms>
+        <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+        <Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+      </Transforms>
+      <DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+      <DigestValue>...</DigestValue>
+    </Reference>
+  </SignedInfo>
+  <SignatureValue>...</SignatureValue>
+  <KeyInfo>...</KeyInfo>
+</Signature>
+```
+
+Comparando com o XSD:
+
+1. **CanonicalizationMethod**
+
+   * Esperado: `...REC-xml-c14n-20010315`
+   * Você está usando: `http://www.w3.org/2001/10/xml-exc-c14n#` ❌
+
+2. **SignatureMethod**
+
+   * Esperado: `http://www.w3.org/2000/09/xmldsig#rsa-sha1`
+   * Você está usando: `http://www.w3.org/2001/04/xmldsig-more#rsa-sha256` ❌
+
+3. **Transform (2º transform)**
+
+   * Esperado: apenas `enveloped-signature` e/ou `REC-xml-c14n-20010315`
+   * Você está usando: `xml-exc-c14n#` no segundo transform ❌
+
+4. **DigestMethod**
+
+   * Esperado: `http://www.w3.org/2000/09/xmldsig#sha1`
+   * Você está usando: `http://www.w3.org/2001/04/xmlenc#sha256` ❌
+
+Esse tipo de divergência é exatamente o tipo de coisa que causa mensagem como:
+
+> O atributo 'Algorithm' tem valor '...rsa-sha256' que não corresponde ao valor fixo '...rsa-sha1' no esquema. ([Projeto ACBr][5])
+
+E, do lado da SEFAZ, isso estoura como **cStat 225 – Falha no schema XML do lote**.
+
+---
+
+### 4. Como deve ficar a `Signature` para passar no XSD da NF-e
+
+Ela deveria ficar **mais ou menos assim** (ajustando os algoritmos para o padrão NF-e):
+
+```xml
+<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+  <SignedInfo>
+    <CanonicalizationMethod
+      Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+    <SignatureMethod
+      Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+    <Reference URI="#ID2102102325110095439400011755004003616360113355117001">
+      <Transforms>
+        <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+        <Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+      </Transforms>
+      <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+      <DigestValue>...</DigestValue>
+    </Reference>
+  </SignedInfo>
+  <SignatureValue>...</SignatureValue>
+  <KeyInfo>...</KeyInfo>
+</Signature>
+```
+
+> **Importante:** não adianta só trocar as strings dos algoritmos “na mão” depois de assinar, porque isso quebra a assinatura.
+> Você precisa **configurar a sua lib de assinatura** para já assinar usando RSA-SHA1 + SHA1 + C14N “clássico”.
+
+---
+
+### 5. O que você precisa mudar no código (ideia geral)
+
+Como não vi ainda o trecho da assinatura em si, vou falar de forma genérica (aplica para Node, .NET, Java etc.):
+
+1. **Configure o algoritmo de assinatura** para **RSA-SHA1**:
+
+   * algo como `signingAlgorithm = "http://www.w3.org/2000/09/xmldsig#rsa-sha1"`
+
+2. **Configure o algoritmo de digest** para **SHA-1**:
+
+   * `digestAlgorithm = "http://www.w3.org/2000/09/xmldsig#sha1"`
+
+3. **Configure a canonicalização** para:
+
+   * `canonicalizationAlgorithm = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"`
+
+4. **Transforms**:
+
+   * primeiro: `enveloped-signature`
+   * segundo: `REC-xml-c14n-20010315`
+
+Se você está em Node/TypeScript com alguma lib tipo `xml-crypto` / `xmldsigjs`, geralmente existem opções assim:
+
+* `signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'`
+* `digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1'`
+* e configuração da canonicalização/transform.
+
+---
+
+### 6. Resumão
+
+* **cStat 225** aqui = Seu XML de manifestação **não passa no XSD**, e **a parte que está fora do padrão é a assinatura (`Signature`)**, não o `infEvento`. ([Google Grupos][1])
+* Os XSDs da NF-e (`xmldsig-core-schema_v1.01.xsd`) **travaram os algoritmos** em:
+
+  * C14N “normal” (`...c14n-20010315`)
+  * `rsa-sha1`
+  * `sha1`
+* Você está usando `xml-exc-c14n` + `rsa-sha256` + `sha256` → **isso quebra o schema**, gerando exatamente o 225.
+* O caminho é: **ajustar a biblioteca para assinar com os algoritmos antigos da NF-e**.
+
+Se você me mandar (na próxima mensagem) o trecho de código que você usa pra assinar o `envEvento` (a função que gera essa `<Signature>`), eu posso te devolver a versão já ajustada com os algoritmos corretos.
+
+[1]: https://groups.google.com/g/nfephp/c/6LWdIuWv_-s?utm_source=chatgpt.com "Cancelamento NF-e - Rejeição 225 Falha o Schema XML"
+[2]: https://dfe-portal.svrs.rs.gov.br/Schemas/PRNF3E/xmldsig-core-schema_v1.01.xsd?utm_source=chatgpt.com "https://dfe-portal.svrs.rs.gov.br/Schemas/PRNF3E/xmldsig ..."
+[3]: https://flexdocs.net/suporte/knowledgebase.php?article=360&utm_source=chatgpt.com "225 - Rejeição: Falha no schema XML da NFe (CC-e ..."
+[4]: https://www.nfe.fazenda.gov.br/portal/exibirArquivo.aspx?conteudo=dlSL5ODYKeg%3D&utm_source=chatgpt.com "Nota Técnica 2020.001 Evento de manifestação do destinatário"
+[5]: https://www.projetoacbr.com.br/forum/topic/35802-falha-na-valida%C3%A7%C3%A3o-dos-dados-do-conhecimento-o-atributo-algorithm-tem-valor-httpwwww3org200104xmldsg-mrersa-sha256-que-n%C3%A3o-corresponde-ao-valor-fixo/?utm_source=chatgpt.com "Falha na validação dos dados do Conhecimento: O ..."

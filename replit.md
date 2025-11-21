@@ -51,26 +51,29 @@ This web application automates the download of XMLs (nfeProc) from SEFAZ, offeri
 
 ---
 
-### ✅ XML Digital Signature Implementation (cStat 215 FIX)
+### ✅ XML Digital Signature - Algorithm Correction (cStat 225 FIX)
 **Date**: November 21, 2025  
-**Status**: COMPLETE - Architect Reviewed and Approved
+**Status**: IMPLEMENTED - Pending Validation
 
 **Problem Identified**: 
-- Manifestation requests were returning cStat 215 ("Rejeição: Falha no Schema XML do lote de evento")
-- Root cause: Missing XML digital signature in recipient manifestation events (NT 2020.001 § 6.3 requirement)
+- Manifestation requests returning cStat 225 ("Rejeição: Falha no Schema XML do lote de NFe")
+- Root cause: **SEFAZ XSD `xmldsig-core-schema_v1.01.xsd` MANDATES classic algorithms** (SHA-1, C14N), rejecting modern algorithms (SHA-256, Exclusive C14N)
+- Analysis confirmed signature structure was correct, but algorithm URIs were non-compliant with SEFAZ schema
 
 **Solution Implemented**:
-1. **Refactored `buildSOAPEnvelopeManifestacao`** (`server/sefaz-service.ts` lines 420-471):
-   - Generates unsigned evento XML structure
-   - Signs XML using `signXmlEvento` with RSA-SHA256 and exclusive canonicalization
-   - Extracts signed content with `<Signature>` block (now without ds: prefix)
-   - Embeds signed evento into SOAP envelope
+1. **Corrected `signXmlEvento`** (`server/sefaz-service.ts` lines 80-124):
+   - **SignatureMethod**: `rsa-sha256` → `rsa-sha1` ✅
+   - **CanonicalizationMethod**: `xml-exc-c14n` → `xml-c14n-20010315` (classic C14N) ✅
+   - **DigestMethod**: `sha256` → `sha1` ✅
+   - **Transform[1]**: `xml-exc-c14n` → `xml-c14n-20010315` (classic C14N) ✅
+   - **Maintained**: `prefix: ''` to avoid cStat 404 (namespace prefix rejection)
 
-2. **Modified `manifestarEvento`** (`server/sefaz-service.ts` lines 1371-1392):
-   - Loads PKCS#12 certificate via `loadPKCS12Certificate`
-   - Passes privateKey and certificate to `buildSOAPEnvelopeManifestacao` for signing
+**Technical Justification**:
+- SEFAZ NF-e uses fixed XSD schema that **only accepts** these specific algorithm URIs
+- SHA-1 usage is **mandated by SEFAZ compliance**, not a security vulnerability in this context
+- All modern cryptographic libraries support legacy SHA-1 for backward compatibility requirements
 
-**Verification**: Architect confirmed implementation is fully compliant with NT 2020.001 specifications, uses correct cryptographic algorithms (RSA-SHA256), and has no security issues.
+**Verification**: Awaiting next manifestation cycle to confirm cStat changes from 225 to 135/573 (success)
 
 ---
 

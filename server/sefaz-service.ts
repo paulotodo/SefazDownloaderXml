@@ -79,13 +79,17 @@ function signXmlEvento(xmlEvento: string, privateKey: string, certificate: strin
     console.log('[signXmlEvento] 🔍 PrivateKey recebida:', privateKey ? `SIM (${privateKey.substring(0, 50)}...)` : 'NÃO');
     console.log('[signXmlEvento] 🔍 Certificate recebido:', certificate ? `SIM (${certificate.substring(0, 50)}...)` : 'NÃO');
     
-    // Criar assinatura com xml-crypto v6.x API
-    // Conforme documentação oficial: privateKey pode ser string PEM ou Buffer
+    // CORREÇÃO cStat 225: Usar algoritmos CLÁSSICOS exigidos pelo XSD xmldsig-core-schema_v1.01.xsd
+    // SEFAZ NF-e FIXA os algoritmos (não aceita SHA-256, apenas SHA-1)
+    // Referência: xmldsig-core-schema_v1.01.xsd em https://dfe-portal.svrs.rs.gov.br/
+    console.log('[signXmlEvento] 🔧 Usando algoritmos SHA-1 + C14N clássico (exigência XSD SEFAZ)');
     const sig = new SignedXml({
       privateKey: privateKey,  // String PEM diretamente conforme docs
       publicCert: certificate,  // Será incluído em <KeyInfo><X509Certificate>
-      signatureAlgorithm: 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256',
-      canonicalizationAlgorithm: 'http://www.w3.org/2001/10/xml-exc-c14n#'
+      // CORREÇÃO: RSA-SHA1 ao invés de RSA-SHA256 (mandato SEFAZ)
+      signatureAlgorithm: 'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+      // CORREÇÃO: C14N clássico ao invés de Exclusive C14N (mandato SEFAZ)
+      canonicalizationAlgorithm: 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
     });
     
     // Adicionar referência ao elemento infEvento (que possui atributo Id)
@@ -93,15 +97,16 @@ function signXmlEvento(xmlEvento: string, privateKey: string, certificate: strin
       xpath: "//*[local-name()='infEvento']",
       transforms: [
         'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
-        'http://www.w3.org/2001/10/xml-exc-c14n#'
+        // CORREÇÃO: C14N clássico ao invés de Exclusive C14N (mandato SEFAZ)
+        'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
       ],
-      digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256'
+      // CORREÇÃO: SHA-1 ao invés de SHA-256 (mandato SEFAZ)
+      digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1'
     });
     
     // Computar assinatura e inserir no final de <evento>
     // publicCert já configura automaticamente <KeyInfo><X509Certificate>
-    // CRÍTICO: Ambiente Nacional REJEITA prefixos de namespace (cStat 404)
-    // Usar prefix: '' (string vazia) para gerar <Signature> ao invés de <ds:Signature>
+    // MANTER: prefix: '' para evitar cStat 404 (SEFAZ rejeita prefixos ds:)
     sig.computeSignature(xmlEvento, {
       prefix: '',  // STRING VAZIA = sem prefixos (não usar 'ds')
       location: { reference: "//*[local-name()='evento']", action: 'append' }
@@ -409,8 +414,7 @@ export class SefazService {
     // PASSO 1: Montar XML do evento (sem assinatura)
     // CRÍTICO XSD: nSeqEvento elemento usa valor SEM padding (1-99), mas Id usa COM padding (01-99)
     // TSeqEvento schema: [1-9][0-9]? - não aceita "01", apenas "1"
-    // CRÍTICO cStat 215 FIX: detEvento DEVE ter xmlns EXPLÍCITO (não apenas herdar do pai)
-    console.log('[buildSOAPEnvelopeManifestacao] 🔧 CÓDIGO ATUALIZADO - detEvento terá xmlns EXPLÍCITO');
+    // CRÍTICO: detEvento DEVE ter xmlns EXPLÍCITO (evita cStat 215)
     const xmlEventoSemAssinatura = `<?xml version="1.0" encoding="utf-8"?>
 <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
   <infEvento Id="${idEvento}">
@@ -1299,29 +1303,70 @@ export class SefazService {
       // cStat 138: Documento localizado (XML completo disponível)
       if (cStat === "138" && retDistDFeInt.loteDistDFeInt) {
         const lote = retDistDFeInt.loteDistDFeInt;
-        const docZip = lote.docZip;
+        let docZip = lote.docZip;
         
+        // Caso legítimo: SEFAZ pode retornar cStat 138 sem docZip (resNFe only)
+        // Retornar null permite fallback para NfeDownloadNF
         if (!docZip) {
-          console.error('[consultarChave] ❌ docZip não encontrado em loteDistDFeInt');
+          console.log('[consultarChave] cStat 138 sem docZip - possível resNFe only - retornando null para fallback');
           return null;
         }
 
-        // docZip vem como Base64 + GZip
-        // 1. Decodifica Base64
-        const gzipBuffer = Buffer.from(docZip, 'base64');
-        
-        // 2. Descompacta GZip
-        const xmlContent = pako.ungzip(gzipBuffer, { to: 'string' });
-        
-        const parsedXML = this.parser.parse(xmlContent);
+        // CORREÇÃO: docZip pode vir como array se houver múltiplos documentos
+        // Pegar apenas o primeiro documento nesse caso
+        if (Array.isArray(docZip)) {
+          if (docZip.length === 0) {
+            console.error('[consultarChave] ❌ docZip é array vazia');
+            throw new Error('SEFAZ retornou docZip array vazia - sem documentos disponíveis');
+          }
+          console.log(`[consultarChave] docZip é array com ${docZip.length} documentos - usando primeiro`);
+          docZip = docZip[0];
+        }
 
-        // Verifica se é nfeProc (XML completo)
-        if (parsedXML.nfeProc) {
-          console.log(`[consultarChave] ✓ XML completo baixado para chave ${chaveNFe}`);
-          return { xmlContent, cStat };
+        // CORREÇÃO: docZip pode ser Object {NSU, schema, #text} ou string Base64
+        // Extrair conteúdo Base64 do objeto se necessário
+        let base64Content: string;
+        if (typeof docZip === 'string') {
+          base64Content = docZip;
+        } else if (typeof docZip === 'object') {
+          // XML parser retorna: { "@_NSU": "...", "@_schema": "...", "#text": "base64..." }
+          base64Content = docZip['#text'] || docZip['_text'] || '';
+          if (base64Content) {
+            console.log('[consultarChave] docZip é objeto - extraído #text:', base64Content.substring(0, 50) + '...');
+          }
         } else {
-          console.warn(`[consultarChave] Chave ${chaveNFe} retornou documento que não é nfeProc:`, Object.keys(parsedXML));
-          return null;
+          console.error('[consultarChave] ❌ docZip tipo inválido:', typeof docZip, '- Dados:', JSON.stringify(docZip));
+          throw new Error(`docZip tipo inválido: ${typeof docZip} - esperado string, object ou array`);
+        }
+
+        // Validar conteúdo Base64 antes de tentar decodificar
+        // CRÍTICO: Lançar exceção ao invés de retornar null para evitar mascarar falhas
+        if (!base64Content || base64Content.trim().length === 0) {
+          console.error('[consultarChave] ❌ Conteúdo Base64 vazio - docZip:', JSON.stringify(docZip));
+          throw new Error(`docZip mal formado: #text/_text não encontrado ou vazio (chave: ${chaveNFe})`);
+        }
+
+        try {
+          // docZip vem como Base64 + GZip
+          // 1. Decodifica Base64
+          const gzipBuffer = Buffer.from(base64Content, 'base64');
+          
+          // 2. Descompacta GZip
+          const xmlContent = pako.ungzip(gzipBuffer, { to: 'string' });
+          
+          const parsedXML = this.parser.parse(xmlContent);
+
+          // Verifica se é nfeProc (XML completo)
+          if (parsedXML.nfeProc) {
+            console.log(`[consultarChave] ✓ XML completo baixado para chave ${chaveNFe}`);
+            return { xmlContent, cStat };
+          } else {
+            console.warn(`[consultarChave] Chave ${chaveNFe} retornou documento que não é nfeProc:`, Object.keys(parsedXML));
+            return null;
+          }
+        } catch (error: any) {
+          console.error(`[consultarChave] ❌ Erro ao descompactar docZip: ${error.message}`);
+          throw new Error(`Falha ao descompactar XML: ${error.message}`);
         }
       }
 
@@ -1434,18 +1479,39 @@ export class SefazService {
         throw new Error("Resposta SEFAZ inválida: retEnvEvento não encontrado");
       }
       
-      const retEvento = retEnvEvento["retEvento"];
-      if (!retEvento || !retEvento.infEvento) {
-        console.error('[Manifestação] ❌ retEvento/infEvento não encontrado. Keys retEnvEvento:', Object.keys(retEnvEvento));
-        console.error('[Manifestação] retEnvEvento completo:', JSON.stringify(retEnvEvento, null, 2));
-        throw new Error("Resposta SEFAZ inválida: retEvento não encontrado");
+      // NT 2020.001 § 4.3.2: Duas estruturas possíveis
+      // 1. Erro de LOTE (cStat ≠ 128): cStat/xMotivo direto no retEnvEvento
+      // 2. Lote OK (cStat = 128): cStat/xMotivo dentro de retEnvEvento.retEvento.infEvento
+      
+      let cStat: string;
+      let xMotivo: string;
+      let nProt = "";
+      let dhRegEvento = "";
+      
+      const cStatLote = String(retEnvEvento.cStat || "");
+      
+      if (cStatLote !== "128") {
+        // Erro de LOTE (ex: cStat 225 = Falha no esquema XML)
+        cStat = cStatLote;
+        xMotivo = String(retEnvEvento.xMotivo || "Erro de lote sem descrição");
+        console.log(`[Manifestação] ⚠️ Erro de LOTE - cStat: ${cStat}, xMotivo: ${xMotivo}`);
+        console.log('[Manifestação] retEnvEvento completo:', JSON.stringify(retEnvEvento, null, 2));
+      } else {
+        // Lote OK (cStat 128), buscar retEvento
+        const retEvento = retEnvEvento["retEvento"];
+        if (!retEvento || !retEvento.infEvento) {
+          console.error('[Manifestação] ❌ retEvento/infEvento não encontrado apesar de cStat=128. Keys:', Object.keys(retEnvEvento));
+          console.error('[Manifestação] retEnvEvento completo:', JSON.stringify(retEnvEvento, null, 2));
+          throw new Error("Resposta SEFAZ inválida: retEvento não encontrado (lote cStat=128)");
+        }
+        
+        const infEvento = retEvento.infEvento;
+        cStat = String(infEvento.cStat || "");
+        xMotivo = String(infEvento.xMotivo || "");
+        nProt = String(infEvento.nProt || "");
+        dhRegEvento = String(infEvento.dhRegEvento || "");
+        console.log(`[Manifestação] ✅ Lote OK (128) - Evento cStat: ${cStat}, xMotivo: ${xMotivo}`);
       }
-
-      const infEvento = retEvento.infEvento;
-      const cStat = String(infEvento.cStat || "");
-      const xMotivo = String(infEvento.xMotivo || "");
-      const nProt = String(infEvento.nProt || "");
-      const dhRegEvento = String(infEvento.dhRegEvento || "");
 
       await storage.createLog({
         userId: empresa.userId,
