@@ -1092,16 +1092,47 @@ export class SefazService {
 
       // Envia para SEFAZ
       const responseXML = await this.callRecepcaoEvento(empresa, envelope);
+      
+      // Log da resposta completa para debug
+      console.log(`[Manifestação] Resposta SOAP recebida (primeiros 500 chars): ${responseXML.substring(0, 500)}`);
+      
       const parsed = this.parser.parse(responseXML);
 
-      // Extrai retEvento da resposta
+      // Extrai retEvento da resposta SOAP
+      // Estrutura: soap:Envelope > soap:Body > nfeRecepcaoEventoResult > retEnvEvento > retEvento
       const envelope_soap = parsed["soap12:Envelope"] || parsed["soap:Envelope"] || parsed["Envelope"];
-      const body = envelope_soap?.["soap12:Body"] || envelope_soap?.["soap:Body"] || envelope_soap?.["Body"];
-      const recepcaoEventoResponse = body?.["nfeRecepcaoEventoResponse"] || body?.["nfeRecepcaoEventoResult"];
-      const retEnvEvento = recepcaoEventoResponse?.["retEnvEvento"];
-      const retEvento = retEnvEvento?.["retEvento"];
-
+      if (!envelope_soap) {
+        console.error('[Manifestação] ❌ Envelope SOAP não encontrado. Keys:', Object.keys(parsed));
+        throw new Error("Resposta SEFAZ inválida: Envelope SOAP não encontrado");
+      }
+      
+      const body = envelope_soap["soap12:Body"] || envelope_soap["soap:Body"] || envelope_soap["Body"];
+      if (!body) {
+        console.error('[Manifestação] ❌ Body SOAP não encontrado. Keys envelope:', Object.keys(envelope_soap));
+        throw new Error("Resposta SEFAZ inválida: Body SOAP não encontrado");
+      }
+      
+      // CORREÇÃO: Busca nfeRecepcaoEventoResult (com namespace)
+      const recepcaoEventoResult = 
+        body["nfeRecepcaoEventoResult"] || 
+        body["nfeRecepcaoEvento4Result"] ||
+        body["nfe:nfeRecepcaoEventoResult"];
+      
+      if (!recepcaoEventoResult) {
+        console.error('[Manifestação] ❌ nfeRecepcaoEventoResult não encontrado. Keys body:', Object.keys(body));
+        throw new Error("Resposta SEFAZ inválida: nfeRecepcaoEventoResult não encontrado");
+      }
+      
+      const retEnvEvento = recepcaoEventoResult["retEnvEvento"];
+      if (!retEnvEvento) {
+        console.error('[Manifestação] ❌ retEnvEvento não encontrado. Keys:', Object.keys(recepcaoEventoResult));
+        throw new Error("Resposta SEFAZ inválida: retEnvEvento não encontrado");
+      }
+      
+      const retEvento = retEnvEvento["retEvento"];
       if (!retEvento || !retEvento.infEvento) {
+        console.error('[Manifestação] ❌ retEvento/infEvento não encontrado. Keys retEnvEvento:', Object.keys(retEnvEvento));
+        console.error('[Manifestação] retEnvEvento completo:', JSON.stringify(retEnvEvento, null, 2));
         throw new Error("Resposta SEFAZ inválida: retEvento não encontrado");
       }
 
