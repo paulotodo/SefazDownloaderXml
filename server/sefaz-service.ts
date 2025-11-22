@@ -1779,6 +1779,29 @@ export class SefazService {
     try {
       // Loop até atingir maxNSU conforme NT 2014.002
       for (let iteracao = 0; iteracao < MAX_ITERACOES; iteracao++) {
+        // CRÍTICO: Verifica rate limit ANTES de consultar SEFAZ (máx 20 consultas/hora)
+        const podeConsultar = await storage.checkRateLimit(empresa.id, "distribuicaoDFe", empresa.userId);
+        
+        if (!podeConsultar) {
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: sincronizacao.id,
+            nivel: "warning",
+            mensagem: `Rate limit atingido - Sincronização pausada`,
+            detalhes: JSON.stringify({ 
+              iteracao: iteracao + 1,
+              ultNSUEnviado: nsuAtual,
+              motivo: "Limite de 20 consultas/hora atingido - aguardando próxima janela",
+              acaoAutomatica: "Sincronização será retomada automaticamente na próxima janela de 1h"
+            }),
+          });
+          
+          // Marca sincronização como completa (parcial) e para o loop
+          alinhamentoCompleto = false;
+          break;
+        }
+        
         // Usa distNSU conforme NT 2014.002 (não consNSU)
         const envelope = this.buildSOAPEnvelopeDistNSU(empresa.cnpj, empresa.uf, empresa.ambiente, nsuAtual);
         
@@ -2215,6 +2238,28 @@ export class SefazService {
       // Loop sequencial seguindo regras da SEFAZ
       // Continua até ultNSU === maxNSU (alinhamento completo)
       for (let i = 0; i < MAX_ITERACOES; i++) {
+        // CRÍTICO: Verifica rate limit ANTES de consultar SEFAZ (máx 20 consultas/hora)
+        const podeConsultar = await storage.checkRateLimit(empresa.id, "distribuicaoDFe", empresa.userId);
+        
+        if (!podeConsultar) {
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: null,
+            nivel: "warning",
+            mensagem: `Rate limit atingido - Reconciliação pausada`,
+            detalhes: JSON.stringify({ 
+              iteracao: i + 1,
+              nsuAtual,
+              motivo: "Limite de 20 consultas/hora atingido - aguardando próxima janela",
+              acaoAutomatica: "Reconciliação será retomada automaticamente na próxima janela de 1h"
+            }),
+          });
+          
+          // Para o loop - sincronização parcial será retomada depois
+          break;
+        }
+        
         // Monta envelope usando distNSU com ultNSU (conforme NT 2014.002)
         const envelope = this.buildSOAPEnvelopeDistNSU(
           empresa.cnpj,
@@ -2518,6 +2563,28 @@ export class SefazService {
       // Loop por cada NSU no intervalo
       for (let nsu = nsuInicialNum; nsu <= nsuFinalNum && consultasRealizadas < maxConsultas; nsu++) {
         const nsuStr = nsu.toString().padStart(15, "0");
+        
+        // CRÍTICO: Verifica rate limit ANTES de consultar SEFAZ (máx 20 consultas/hora)
+        const podeConsultar = await storage.checkRateLimit(empresa.id, "distribuicaoDFe", empresa.userId);
+        
+        if (!podeConsultar) {
+          await storage.createLog({
+            userId: empresa.userId,
+            empresaId: empresa.id,
+            sincronizacaoId: null,
+            nivel: "warning",
+            mensagem: `Rate limit atingido - Busca avançada pausada`,
+            detalhes: JSON.stringify({ 
+              nsuAtual: nsuStr,
+              consultasRealizadas,
+              motivo: "Limite de 20 consultas/hora atingido - aguardando próxima janela",
+              acaoAutomatica: "Busca será retomada automaticamente na próxima janela de 1h"
+            }),
+          });
+          
+          // Para o loop
+          break;
+        }
         
         // Monta envelope consNSU para consulta pontual
         const envelope = this.buildSOAPEnvelope(
