@@ -869,7 +869,8 @@ export class SefazService {
   }
 
   /**
-   * Processa e salva documento baseado no schema (nfeProc, resNFe, procEventoNFe, resEvento)
+   * Processa e salva documento baseado no schema (nfeProc, resNFe)
+   * FILTRO: Ignora procEventoNFe e resEvento (eventos são gerenciados internamente)
    * Conforme NT 2014.002 §3.3 e MOC 7.0 §2.2
    * 
    * IMPORTANTE: SEFAZ retorna schemas SEM namespace (ex: "resNFe" não "http://...resNFe")
@@ -891,9 +892,11 @@ export class SefazService {
     } else if (schemaLower.includes("resnfe")) {
       await this.saveResNFe(parsed, xmlContent, empresa, sincronizacaoId, nsu);
     } else if (schemaLower.includes("proceventonfe")) {
-      await this.saveProcEvento(parsed, xmlContent, empresa, sincronizacaoId, nsu);
+      // FILTRO: Não salva procEventoNFe (eventos são gerenciados pela tabela manifestacoes)
+      console.log(`[SEFAZ] Ignorando procEventoNFe NSU ${nsu} (eventos gerenciados internamente)`);
     } else if (schemaLower.includes("resevento")) {
-      await this.saveResEvento(parsed, xmlContent, empresa, sincronizacaoId, nsu);
+      // FILTRO: Não salva resEvento (resumos de eventos não são necessários)
+      console.log(`[SEFAZ] Ignorando resEvento NSU ${nsu} (resumos de eventos não exibidos)`);
     } else {
       console.warn(`Schema desconhecido: ${schema} - NSU ${nsu}`);
       await storage.createLog({
