@@ -133,6 +133,11 @@ function getStatusNfeBadge(xml: Xml) {
 }
 
 function getTipoDocumentoBadge(xml: Xml) {
+  // Não exibe tipo de documento para XMLs cancelados (badge cancelada já informa)
+  if (xml.statusNfe === "cancelada" || xml.statusNfe === "denegada") {
+    return null;
+  }
+
   if (xml.tipoDocumento === "resNFe") {
     return (
       <Badge variant="secondary" className="gap-1 text-xs">
@@ -155,6 +160,11 @@ function getTipoDocumentoBadge(xml: Xml) {
 }
 
 function getDownloadBadge(xml: Xml) {
+  // Não exibe badge de download para XMLs cancelados ou denegados
+  if (xml.statusNfe === "cancelada" || xml.statusNfe === "denegada") {
+    return null;
+  }
+
   // Apenas resNFe pode ter download pendente (nfeProc já está completo)
   if (xml.tipoDocumento !== "resNFe") {
     return null;

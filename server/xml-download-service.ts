@@ -175,6 +175,12 @@ export class XmlDownloadService {
    * 5. Sempre respeita limite de 20 consultas/hora por empresa
    */
   private async tentarDownloadXml(xml: Xml, empresa: Empresa): Promise<void> {
+    // FILTRO: Ignora XMLs cancelados - não tenta download nem manifestação
+    if (xml.statusNfe === "cancelada" || xml.statusDownload === "cancelada") {
+      console.log(`[Download Service] XML cancelado - não processa: ${xml.chaveNFe}`);
+      return;
+    }
+
     // RETRY INFINITO: Reseta XMLs com erro definitivo para pendente ao retentar
     if (xml.statusDownload === "erro") {
       console.log(`[Download Service] Resetando XML com erro para pendente (retry infinito): ${xml.chaveNFe}`);

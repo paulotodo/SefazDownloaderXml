@@ -518,6 +518,7 @@ export class SupabaseStorage implements IStorage {
       .select("*")
       .eq("status_download", "pendente")
       .eq("tipo_documento", "resNFe") // CRÍTICO: Apenas resNFe (resumos) devem ser baixados
+      .neq("status_nfe", "cancelada") // FILTRO: Ignora XMLs cancelados (não processar)
       .order("created_at", { ascending: true })
       .limit(limit);
     
@@ -539,6 +540,7 @@ export class SupabaseStorage implements IStorage {
       .select("*")
       .eq("tipo_documento", "resNFe") // CRÍTICO: Apenas resNFe (resumos)
       .eq("status_download", "erro") // Busca apenas status "erro" (pendentes vão por getXmlsPendentesDownload)
+      .neq("status_nfe", "cancelada") // FILTRO: Ignora XMLs cancelados (não processar)
       .order("ultima_tentativa_download", { ascending: true })
       .limit(limit);
     

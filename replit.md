@@ -13,6 +13,32 @@ This web application automates the download of XMLs (nfeProc) from SEFAZ, offeri
 
 ## Recent Changes (November 2024)
 
+### ✅ Tratamento de Notas Canceladas (COMPLETE)
+**Date**: November 22, 2025  
+**Status**: ✅ IMPLEMENTED
+
+**Funcionalidade Implementada**:
+- ✅ Detecção de cStat 653 (NF-e cancelada - arquivo indisponível)
+- ✅ Marcação automática: `statusDownload="cancelada"` e `statusNfe="cancelada"`
+- ✅ Filtro de processamento: XMLs cancelados NÃO são processados (download/manifestação)
+- ✅ Exclusão de queries: `getXmlsPendentesDownload` e `getXmlsComErroDownload` ignoram cancelados
+- ✅ Interface visual: Badge vermelho "🚫 Cancelada" sem badges adicionais
+- ✅ Filtro de sincronização: resEvento e procEventoNFe NÃO são mais salvos
+
+**Comportamento**:
+1. Quando SEFAZ retorna cStat 653 → marca XML como cancelado
+2. XML cancelado aparece APENAS na tela de listagem (não tenta download/manifestação)
+3. Não contabilizado como resNFe pendente
+4. Interface mostra apenas badge "Cancelada" (sem outros badges)
+
+**Limpeza de Dados Antigos**:
+```sql
+-- Remover documentos resEvento/procEventoNFe salvos antes do filtro
+DELETE FROM xmls WHERE tipo_documento IN ('resEvento', 'procEventoNFe');
+```
+
+---
+
 ### 🔧 PENDING: Apply Rate Limiting Migrations in Supabase Production
 **Date**: November 21, 2025  
 **Status**: **⚠️ ACTION REQUIRED - MIGRATIONS NOT YET APPLIED**
