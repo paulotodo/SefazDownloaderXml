@@ -16,12 +16,29 @@ import { sefazService } from "./sefaz-service";
 import type { Xml, Empresa } from "@shared/schema";
 import path from "path";
 import { xmlStorageService } from "./xml-storage";
+import { XMLParser } from "fast-xml-parser";
 
 export class XmlDownloadService {
   private readonly MAX_TENTATIVAS = 999; // Retry infinito - sempre tenta baixar e manifestar
   private readonly BATCH_SIZE = 10; // Processa 10 XMLs por vez
   private readonly LOCK_TIMEOUT = 3 * 60 * 1000; // 3 minutos (menos que intervalo do cron de 5min)
   private lockAcquired: boolean = false; // Flag se lock foi adquirido
+  private parser: XMLParser; // Parser para identificar tipo de documento
+
+  constructor() {
+    // Parser XML configurado para manter strings (preservar chaves 44 dígitos)
+    this.parser = new XMLParser({
+      ignoreAttributes: false,
+      parseAttributeValue: false,
+      parseTagValue: false,
+      trimValues: true,
+      numberParseOptions: {
+        leadingZeros: false,
+        hex: false,
+        skipLike: /^[0-9]{44}$/, // Mantém chaves NFe como string
+      },
+    });
+  }
 
   /**
    * Adquire lock distribuído usando PostgreSQL + tabela dedicada
@@ -376,6 +393,13 @@ export class XmlDownloadService {
   /**
    * Salva XML completo no storage e atualiza registro do banco
    * CRÍTICO: Persiste o arquivo XML no disco/Supabase Storage
+   * 
+   * IDENTIFICAÇÃO AUTOMÁTICA DO TIPO DE DOCUMENTO:
+   * Analisa TAG raiz do XML retornado pela SEFAZ para determinar tipo correto:
+   * - <nfeProc> → "nfeProc" (XML completo autorizado)
+   * - <resNFe> → "resNFe" (resumo - não deveria acontecer, mas previne bugs)
+   * - <procEventoNFe> → "procEventoNFe" (evento processado)
+   * - <resEvento> → "resEvento" (resumo de evento)
    */
   private async salvarXmlCompleto(
     xmlOriginal: Xml,
@@ -383,7 +407,27 @@ export class XmlDownloadService {
     xmlContent: string,
     cStat: string
   ): Promise<void> {
-    // Extrai informações do XML completo
+    // ETAPA 1: Identifica tipo de documento pela TAG raiz do XML
+    const parsed = this.parser.parse(xmlContent);
+    let tipoDocumentoIdentificado = "nfeProc"; // Default
+    
+    if (parsed.nfeProc) {
+      tipoDocumentoIdentificado = "nfeProc";
+      console.log(`[Download Service] XML identificado: nfeProc (XML completo)`);
+    } else if (parsed.resNFe) {
+      tipoDocumentoIdentificado = "resNFe";
+      console.log(`[Download Service] XML identificado: resNFe (resumo - inesperado)`);
+    } else if (parsed.procEventoNFe) {
+      tipoDocumentoIdentificado = "procEventoNFe";
+      console.log(`[Download Service] XML identificado: procEventoNFe (evento processado)`);
+    } else if (parsed.resEvento) {
+      tipoDocumentoIdentificado = "resEvento";
+      console.log(`[Download Service] XML identificado: resEvento (resumo de evento)`);
+    } else {
+      console.warn(`[Download Service] ⚠️ TAG raiz desconhecida - usando default "nfeProc"`, Object.keys(parsed));
+    }
+
+    // ETAPA 2: Extrai informações do XML completo
     // CORREÇÃO: dataEmissao pode vir como string do DB - converter para Date
     const dataEmissao = xmlOriginal.dataEmissao instanceof Date 
       ? xmlOriginal.dataEmissao 
@@ -416,7 +460,7 @@ export class XmlDownloadService {
       console.warn(`[Download Service] Não foi possível deletar resNFe antigo:`, err);
     }
 
-    // Determina status da NFe baseado em cStat da SEFAZ
+    // ETAPA 3: Determina status da NFe baseado em cStat da SEFAZ
     let statusNfe = "autorizada"; // Default
     switch (cStat) {
       case "100":
@@ -441,15 +485,17 @@ export class XmlDownloadService {
         break;
     }
 
-    // Atualiza registro com XML completo E status da NFe
+    // ETAPA 4: Atualiza registro com tipo identificado, XML completo E status da NFe
     await storage.updateXml(xmlOriginal.id, {
-      tipoDocumento: "nfeProc", // Agora é XML completo
+      tipoDocumento: tipoDocumentoIdentificado, // ✅ IDENTIFICADO PELA TAG RAIZ
       caminhoArquivo: caminhoCompleto, // Novo caminho
       tamanhoBytes, // Novo tamanho
       statusDownload: "completo",
       statusNfe, // Status baseado em cStat
       erroDownload: undefined, // Limpa erro anterior
     });
+
+    console.log(`[Download Service] ✓ XML salvo com tipo "${tipoDocumentoIdentificado}" - chave ${xmlOriginal.chaveNFe}`);
   }
 
   /**
