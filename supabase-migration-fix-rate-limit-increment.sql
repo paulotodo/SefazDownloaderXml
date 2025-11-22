@@ -56,9 +56,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 COMMENT ON FUNCTION increment_and_check_rate_limit IS 
-  'Incrementa contador APENAS se está abaixo do limite (default 20/hora). ' ||
-  'Retorna TRUE se pode consultar, FALSE se limite atingido. ' ||
-  'CORRIGIDO: NÃO incrementa quando já no limite.';
+  'Incrementa contador APENAS se está abaixo do limite (default 20/hora). Retorna TRUE se pode consultar, FALSE se limite atingido. CORRIGIDO: NÃO incrementa quando já no limite.';
 
 -- Limpa contadores acima de 20 (causados pelo bug anterior)
 UPDATE sefaz_rate_limit
