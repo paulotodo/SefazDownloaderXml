@@ -1099,7 +1099,7 @@ export class SefazService {
             userId: empresa.userId,
             empresaId: empresa.id,
             sincronizacaoId,
-            nivel: "debug",
+            nivel: "info",
             mensagem: `Manifestação automática não aplicável - empresa não é destinatária`,
             detalhes: JSON.stringify({ 
               chNFe,
