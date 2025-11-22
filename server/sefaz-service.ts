@@ -1783,17 +1783,25 @@ export class SefazService {
         const podeConsultar = await storage.checkRateLimit(empresa.id, "distribuicaoDFe", empresa.userId);
         
         if (!podeConsultar) {
+          // CRÍTICO: Persiste bloqueio de 65min para evitar retry antes do reset
+          const bloqueadoAte = criarBloqueio(65);
+          await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+          
+          const proximaConsultaHorarioBrasil = formatarDataBrasilCompleta(bloqueadoAte);
+          
           await storage.createLog({
             userId: empresa.userId,
             empresaId: empresa.id,
             sincronizacaoId: sincronizacao.id,
             nivel: "warning",
-            mensagem: `Rate limit atingido - Sincronização pausada`,
+            mensagem: `Rate limit atingido - Bloqueado até ${proximaConsultaHorarioBrasil}`,
             detalhes: JSON.stringify({ 
               iteracao: iteracao + 1,
               ultNSUEnviado: nsuAtual,
-              motivo: "Limite de 20 consultas/hora atingido - aguardando próxima janela",
-              acaoAutomatica: "Sincronização será retomada automaticamente na próxima janela de 1h"
+              bloqueadoAte: bloqueadoAte.toISOString(),
+              proximaConsultaHorarioBrasil,
+              motivo: "Limite de 20 consultas/hora atingido - empresa bloqueada por 65min",
+              acaoAutomatica: "Bloqueio automático por 65min. Sincronização retomará após " + proximaConsultaHorarioBrasil
             }),
           });
           
@@ -2242,17 +2250,25 @@ export class SefazService {
         const podeConsultar = await storage.checkRateLimit(empresa.id, "distribuicaoDFe", empresa.userId);
         
         if (!podeConsultar) {
+          // CRÍTICO: Persiste bloqueio de 65min para evitar retry antes do reset
+          const bloqueadoAte = criarBloqueio(65);
+          await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+          
+          const proximaConsultaHorarioBrasil = formatarDataBrasilCompleta(bloqueadoAte);
+          
           await storage.createLog({
             userId: empresa.userId,
             empresaId: empresa.id,
             sincronizacaoId: null,
             nivel: "warning",
-            mensagem: `Rate limit atingido - Reconciliação pausada`,
+            mensagem: `Rate limit atingido - Bloqueado até ${proximaConsultaHorarioBrasil}`,
             detalhes: JSON.stringify({ 
               iteracao: i + 1,
               nsuAtual,
-              motivo: "Limite de 20 consultas/hora atingido - aguardando próxima janela",
-              acaoAutomatica: "Reconciliação será retomada automaticamente na próxima janela de 1h"
+              bloqueadoAte: bloqueadoAte.toISOString(),
+              proximaConsultaHorarioBrasil,
+              motivo: "Limite de 20 consultas/hora atingido - empresa bloqueada por 65min",
+              acaoAutomatica: "Bloqueio automático. Reconciliação retomará após " + proximaConsultaHorarioBrasil
             }),
           });
           
@@ -2568,17 +2584,25 @@ export class SefazService {
         const podeConsultar = await storage.checkRateLimit(empresa.id, "distribuicaoDFe", empresa.userId);
         
         if (!podeConsultar) {
+          // CRÍTICO: Persiste bloqueio de 65min para evitar retry antes do reset
+          const bloqueadoAte = criarBloqueio(65);
+          await storage.updateEmpresa(empresa.id, { bloqueadoAte }, empresa.userId);
+          
+          const proximaConsultaHorarioBrasil = formatarDataBrasilCompleta(bloqueadoAte);
+          
           await storage.createLog({
             userId: empresa.userId,
             empresaId: empresa.id,
             sincronizacaoId: null,
             nivel: "warning",
-            mensagem: `Rate limit atingido - Busca avançada pausada`,
+            mensagem: `Rate limit atingido - Bloqueado até ${proximaConsultaHorarioBrasil}`,
             detalhes: JSON.stringify({ 
               nsuAtual: nsuStr,
               consultasRealizadas,
-              motivo: "Limite de 20 consultas/hora atingido - aguardando próxima janela",
-              acaoAutomatica: "Busca será retomada automaticamente na próxima janela de 1h"
+              bloqueadoAte: bloqueadoAte.toISOString(),
+              proximaConsultaHorarioBrasil,
+              motivo: "Limite de 20 consultas/hora atingido - empresa bloqueada por 65min",
+              acaoAutomatica: "Bloqueio automático. Busca retomará após " + proximaConsultaHorarioBrasil
             }),
           });
           
