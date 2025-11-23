@@ -1,0 +1,53 @@
+root@ubuntu-8gb-ash-1:/var/lib/downloadsefaz/SefazDownloaderXml# cd /var/lib/downloadsefaz/SefazDownloaderXml && \
+> docker stop sefaz-xml-sync && docker rm sefaz-xml-sync && \
+> docker compose -f docker-compose.production.yml up -d --force-recreate && \
+> sleep 35 && \
+> echo "📅 Iniciado em: $(docker inspect sefaz-xml-sync --format='{{.State.StartedAt}}')" && \
+> echo "" && echo "📝 Logs:" && \
+> docker logs sefaz-xml-sync | head -20 && \
+> echo "" && echo "🧪 Teste API:" && \
+> curl -I http://127.0.0.1:5000/api/health && \
+> echo "" && echo "🧪 Teste Frontend:" && \
+> curl -I http://127.0.0.1:5000/
+sefaz-xml-sync
+sefaz-xml-sync
+WARN[0000] /var/lib/downloadsefaz/SefazDownloaderXml/docker-compose.production.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion
+[+] Running 2/2
+ ✔ Network sefazdownloaderxml_default  Created                                                 0.1s
+ ✔ Container sefaz-xml-sync            Started                                                 0.2s
+📅 Iniciado em: 2025-11-23T07:56:33.753566912Z
+
+📝 Logs:
+✓ Supabase configurado com sucesso
+✓ Agendamento configurado:
+  - Sincronização SEFAZ: a cada 1 hora
+  - Download de XMLs: a cada 5 minutos
+4:56:35 AM [express] serving on port 5000
+4:56:38 AM [express] HEAD /api/health 200 in 5ms :: {"status":"ok","timestamp":"2025-11-23T07:56:38.…
+
+🧪 Teste API:
+HTTP/1.1 404 Not Found
+X-Powered-By: Express
+Content-Security-Policy: default-src 'none'
+Vary: Origin
+Access-Control-Allow-Credentials: true
+X-Content-Type-Options: nosniff
+Content-Type: text/html; charset=utf-8
+Content-Length: 150
+Date: Sun, 23 Nov 2025 07:57:08 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+
+🧪 Teste Frontend:
+HTTP/1.1 404 Not Found
+X-Powered-By: Express
+Content-Security-Policy: default-src 'none'
+Vary: Origin
+Access-Control-Allow-Credentials: true
+X-Content-Type-Options: nosniff
+Content-Type: text/html; charset=utf-8
+Content-Length: 140
+Date: Sun, 23 Nov 2025 07:57:08 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
