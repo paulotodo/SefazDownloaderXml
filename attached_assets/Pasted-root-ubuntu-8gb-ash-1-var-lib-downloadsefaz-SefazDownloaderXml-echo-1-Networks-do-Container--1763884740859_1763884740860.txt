@@ -1,0 +1,53 @@
+root@ubuntu-8gb-ash-1:/var/lib/downloadsefaz/SefazDownloaderXml# echo "=== 1. Networks do Container ===" && \
+> docker inspect sefaz-xml-sync --format='{{range $key, $value := .NetworkSettings.Networks}}{{$key}} {{end}}' && \
+> echo "" && echo "=== 2. Todas as Networks ===" && \
+> docker network ls && \
+> echo "" && echo "=== 3. Teste DENTRO do container ===" && \
+> docker exec sefaz-xml-sync wget -qO- http://localhost:5000/api/health && \
+> echo "" && echo "=== 4. Config do Compose ===" && \
+> cat docker-compose.production.yml | grep -A 10 "networks:"
+=== 1. Networks do Container ===
+sefazdownloaderxml_default
+
+=== 2. Todas as Networks ===
+NETWORK ID     NAME                          DRIVER    SCOPE
+0cabe5a79307   app_default                   bridge    local
+8721abaac39f   app_homologacao_default       bridge    local
+64659dcac6ff   bidibs                        bridge    local
+6bf21873320b   bridge                        bridge    local
+93a2074edfcf   cal                           bridge    local
+398286679cbf   consultalimite                bridge    local
+a656728974f3   digital_network               bridge    local
+67ba08d1311f   downloadsefaz                 bridge    local
+4c20d28dd7e9   fastapi                       bridge    local
+2cbc0b92b5bc   fastapi_homologacao           bridge    local
+abc5bbe3b521   gold_reports_relatorio_gold   bridge    local
+0b2dd4b762f3   host                          host      local
+946757b72d49   jasper_net                    bridge    local
+c12c6f889dd6   n8n                           bridge    local
+10888088d0f7   nginx_fotos                   bridge    local
+94ea51fda73f   nginx_videos                  bridge    local
+282b4cb2d23b   none                          null      local
+75439c69808a   pgadmin                       bridge    local
+05e58280bbc9   pgrest                        bridge    local
+d5734d873a5c   portainer_default             bridge    local
+ae52418bfc1d   relatorio_gold                bridge    local
+dd2fd4829dcc   relatorio_gold_novo           bridge    local
+f890290aecff   sefaz-xml-sync_default        bridge    local
+13edfc30eeb1   sefazdownloaderxml_default    bridge    local
+7f6cd58adb1c   typebot                       bridge    local
+
+=== 3. Teste DENTRO do container ===
+{"status":"ok","timestamp":"2025-11-23T07:58:45.581Z"}
+=== 4. Config do Compose ===
+networks:
+  downloadsefaz:
+    external: true
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  xmls-data:
+    driver: local
+  certificados-data:
