@@ -1,4 +1,4 @@
-#!/bin/sh
+    #!/bin/sh
 # ============================================================================
 # Docker Entrypoint - SEFAZ XML Sync
 # Corrige permissões dos volumes antes de iniciar a aplicação
