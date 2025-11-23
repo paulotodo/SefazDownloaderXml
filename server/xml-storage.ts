@@ -17,7 +17,7 @@ export class XmlStorageService {
   private supabaseBucket: string;
 
   constructor() {
-    this.localBasePath = process.env.XML_DEST_PATH || "./xmls";
+    this.localBasePath = process.env.XML_DEST_PATH || (process.env.NODE_ENV === "production" ? "/app/xmls" : "./xmls");
     this.supabaseBucket = "xmls"; // Nome do bucket no Supabase Storage
   }
 

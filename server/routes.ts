@@ -14,7 +14,9 @@ import { insertEmpresaSchema, uploadCertificadoSchema } from "@shared/schema";
 import { xmlStorageService } from "./xml-storage";
 
 // Configuração do multer para upload de certificados
-const certificadosDir = path.join(process.cwd(), "certificados");
+const certificadosDir = process.env.NODE_ENV === "production" 
+  ? "/app/certificados"
+  : path.join(process.cwd(), "certificados");
 fs.mkdir(certificadosDir, { recursive: true }).catch(console.error);
 
 const upload = multer({
