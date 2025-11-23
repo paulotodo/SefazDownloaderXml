@@ -62,12 +62,13 @@ ENV NODE_ENV=production \
     PORT=5000 \
     TZ=America/Sao_Paulo
 
-# Instala apenas pacotes essenciais: tzdata, tini (init system), wget (healthcheck)
+# Instala apenas pacotes essenciais: tzdata, tini (init system), wget (healthcheck), su-exec (user switching)
 RUN apk add --no-cache \
     tzdata \
     tini \
     wget \
-    openssl
+    openssl \
+    su-exec
 
 # Cria usuário não-root para segurança (Principle of Least Privilege)
 RUN addgroup -g 1001 -S nodejs && \
@@ -84,12 +85,12 @@ COPY --from=build --chown=nodejs:nodejs /app/dist ./dist
 # Copia package.json para ter versão/nome do app disponível em runtime
 COPY --chown=nodejs:nodejs package*.json ./
 
-# Cria diretórios necessários com permissões corretas
-RUN mkdir -p /app/xmls /app/certificados && \
-    chown -R nodejs:nodejs /app/xmls /app/certificados
+# Copia entrypoint script que corrige permissões dos volumes em runtime
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Muda para usuário não-root (segurança)
-USER nodejs
+# Cria diretórios necessários (permissões serão corrigidas pelo entrypoint)
+RUN mkdir -p /app/xmls /app/certificados
 
 # Expõe porta 5000 (frontend + backend unificado)
 EXPOSE 5000
@@ -99,10 +100,12 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:5000/api/health || exit 1
 
-# Usa Tini como init system (gerencia sinais SIGTERM/SIGINT corretamente)
+# Usa Tini como init system + entrypoint script (gerencia sinais SIGTERM/SIGINT corretamente)
+# O entrypoint script corrige permissões dos volumes antes de iniciar a aplicação
 # Isso garante que Ctrl+C e docker stop funcionem corretamente
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 
 # Inicia aplicação com node direto (não npm start) - melhor gerenciamento de sinais
 # O arquivo dist/index.js foi gerado pelo esbuild no stage de build
+# O script entrypoint.sh irá executar este comando como usuário nodejs
 CMD ["node", "dist/index.js"]
