@@ -1,4 +1,4 @@
-    #!/bin/sh
+#!/bin/sh
 # ============================================================================
 # Docker Entrypoint - SEFAZ XML Sync
 # Corrige permissões dos volumes antes de iniciar a aplicação
@@ -16,7 +16,7 @@ fix_permissions() {
         # Verifica se o diretório é gravável pelo usuário nodejs (uid=1001)
         if ! su-exec nodejs test -w "$dir" 2>/dev/null; then
             echo "⚠️  Corrigindo permissões de: $dir"
-            chown -R nodejs:nodejs "$dir"
+            chown -R root:root "$dir"
             chmod -R 755 "$dir"
         else
             echo "✅ Permissões OK: $dir"
@@ -24,7 +24,7 @@ fix_permissions() {
     else
         echo "⚠️  Criando diretório: $dir"
         mkdir -p "$dir"
-        chown -R nodejs:nodejs "$dir"
+        chown -R root:root "$dir"
         chmod -R 755 "$dir"
     fi
 }
@@ -37,4 +37,4 @@ echo "✅ Permissões verificadas!"
 echo ""
 
 # Inicia a aplicação como usuário nodejs
-exec su-exec nodejs "$@"
+exec su-exec root "$@"
