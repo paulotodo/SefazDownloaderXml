@@ -9,9 +9,8 @@ version: '3.8'
 # NETWORKS
 # ============================================================================
 networks:
-  traefik-proxy:
+  downloadsefaz:
     external: true
-    name: traefik-proxy
 
 # ============================================================================
 # VOLUMES
@@ -43,15 +42,26 @@ services:
     # NÃO expõe publicamente - Traefik gerencia isso
     expose:
       - 5000
+
+    networks:
+      - downloadsefaz
     
-    # Variáveis de ambiente (carregadas de .env.production)
-    env_file:
-      - .env.production
-    
+    # Variáveis de ambiente (antes vinham do .env.production)
     environment:
       - NODE_ENV=production
       - PORT=5000
       - TZ=America/Sao_Paulo
+      - SUPABASE_URL=https://zwwtysvyyubraupzlppr.supabase.co
+      - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3d3R5c3Z5eXVicmF1cHpscHByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwNTcxOTUsImV4cCI6MjA3ODYzMzE5NX0.osDMS4frqaDsuRswlaIm721PyRSE-bnk01VBJgc9mfo
+      - SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3d3R5c3Z5eXVicmF1cHpscHByIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzA1NzE5NSwiZXhwIjoyMDc4NjMzMTk1fQ.5Ddq5f3qjpuZV1384K1LvuRAkLXb4BbWJnA6dgPH1R0
+      - SESSION_SECRET=dpCW6vMLfsae76yeHvsk4PK5+bI205Uon5YX/ynRNXY=
+      - SEFAZ_AMBIENTE=1
+      - SEFAZ_TIMEOUT=30000
+      - SYNC_INTERVAL=60
+      - STORAGE_TYPE=local
+      - LOG_LEVEL=info
+      - CORS_ORIGINS=https://downloadsefaz.dibs.com.br
+      - RATE_LIMIT_MAX=100
     
     # Volumes persistentes
     volumes:
@@ -64,7 +74,7 @@ services:
       - "traefik.enable=true"
       
       # Define a rede do Traefik
-      - "traefik.docker.network=traefik-proxy"
+      - "traefik.docker.network=downloadsefaz"
       
       # ROUTER: Configuração de roteamento HTTP/HTTPS
       - "traefik.http.routers.sefaz-xml-sync.rule=Host(`downloadsefaz.dibs.com.br`)"
@@ -79,32 +89,10 @@ services:
       - "traefik.http.routers.sefaz-xml-sync.service=sefaz-xml-sync"
       
       # OPCIONAL: Middleware de compressão (melhora performance)
-      # - "traefik.http.routers.sefaz-xml-sync.middlewares=compress@docker"
-      # - "traefik.http.middlewares.compress.compress=true"
+      - "traefik.http.routers.sefaz-xml-sync.middlewares=compress@docker"
+      - "traefik.http.middlewares.compress.compress=true"
       
       # OPCIONAL: Security headers
       # - "traefik.http.routers.sefaz-xml-sync.middlewares=security-headers@docker"
       # - "traefik.http.middlewares.security-headers.headers.sslredirect=true"
       # - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
-      # - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
-    
-    networks:
-      - traefik-proxy
-    
-    # Health check (Docker monitora saúde do container)
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    
-    # Limites de recursos (ajuste conforme necessário)
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '1.0'
-          memory: 1G
