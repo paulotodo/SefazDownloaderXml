@@ -1,0 +1,31 @@
+root@ubuntu-8gb-ash-1:/var/lib/downloadsefaz/SefazDownloaderXml# echo "=== 1. CONTAINERS ===" && \
+> docker ps -a | grep sefaz && \
+> echo "" && echo "=== 2. LOGS DE BLOQUEIO ===" && \
+> docker logs sefaz-xml-sync 2>&1 | grep -E "656|bloqueado|bloqueada" | tail -15 && \
+> echo "" && echo "=== 3. SINCRONIZAÇÕES RECENTES ===" && \
+> docker logs sefaz-xml-sync 2>&1 | grep -E "Executando sincronização|Iniciando sincronização" | tail -10 && \
+> echo "" && echo "=== 4. HORÁRIO DO SERVIDOR vs CONTAINER ===" && \
+> echo "Servidor: $(date '+%Y-%m-%d %H:%M:%S %Z')" && \
+> echo "Container: $(docker exec sefaz-xml-sync date '+%Y-%m-%d %H:%M:%S %Z')"
+=== 1. CONTAINERS ===
+6b8c3d4c8aa5   sefaz-xml-sync:1.0.0                          "/sbin/tini -- /usr/…"   5 hours ago     Up 5 hours (healthy)   5000/tcp                                                                                   sefaz-xml-sync
+
+=== 2. LOGS DE BLOQUEIO ===
+Erro ao sincronizar DKK CALCADOS E CONFECCOES LTDA - D10: Error: Empresa bloqueada pela SEFAZ (erro 656) até 23 de novembro de 2025 às 16:05:03. Tempo restante: 6 minutos. Aguarde o desbloqueio automático.
+Erro crítico ao sincronizar DKK CALCADOS E CONFECCOES LTDA - D10: Error: Bloqueio SEFAZ (cStat 656): Rejeicao: Consumo Indevido (Deve ser aguardado 1 hora para efetuar nova solicitacao caso nao existam mais documentos a serem pesquisados. Tente apos 1 hora). NSU atualizado para 000000000081197. Empresa bloqueada até 23 de novembro de 2025 às 18:05:02. Aguarde o desbloqueio automático.
+Erro ao sincronizar DKK CALCADOS E CONFECCOES LTDA - D10: Error: Empresa bloqueada pela SEFAZ (erro 656) até 23 de novembro de 2025 às 18:05:02. Tempo restante: 6 minutos. Aguarde o desbloqueio automático.
+Erro ao sincronizar DKK CALCADOS E CONFECCOES LTDA - D10: Error: Empresa bloqueada pela SEFAZ (erro 656) até 23 de novembro de 2025 às 19:46:31. Tempo restante: 47 minutos. Aguarde o desbloqueio automático.
+Erro crítico ao sincronizar DKK CALCADOS E CONFECCOES LTDA - D10: Error: Bloqueio SEFAZ (cStat 656): Rejeicao: Consumo Indevido (Deve ser aguardado 1 hora para efetuar nova solicitacao caso nao existam mais documentos a serem pesquisados. Tente apos 1 hora). NSU atualizado para 000000000081198. Empresa bloqueada até 23 de novembro de 2025 às 21:05:02. Aguarde o desbloqueio automático.
+Erro ao sincronizar DKK CALCADOS E CONFECCOES LTDA - D10: Error: Empresa bloqueada pela SEFAZ (erro 656) até 23 de novembro de 2025 às 21:05:02. Tempo restante: 6 minutos. Aguarde o desbloqueio automático.
+
+=== 3. SINCRONIZAÇÕES RECENTES ===
+Executando sincronização agendada...
+Executando sincronização agendada...
+Executando sincronização agendada...
+Executando sincronização agendada...
+Executando sincronização agendada...
+Executando sincronização agendada...
+
+=== 4. HORÁRIO DO SERVIDOR vs CONTAINER ===
+Servidor: 2025-11-24 00:16:45 UTC
+Container: 2025-11-23 21:16:45 -03
